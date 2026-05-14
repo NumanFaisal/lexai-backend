@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+
+    "strict": true,
+    "skipLibCheck": true,
+
+    "rootDir": "./src",
+    "outDir": "./dist",
+
+    "baseUrl": "./src",
+
+    "paths": {
+      "@/*": ["*"]
+    },
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "strictNullChecks": true,
+    "noImplicitAny": true
+  },
+
+  "include": ["src"]
+}
