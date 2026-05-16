@@ -1,15 +1,768 @@
+// ═══════════════════════════════════════════════════════════════════════
+// LexAi — Complete Prisma Schema
+// Every model needed for: Auth, Chat, Documents, Compliance,
+// Payments, WhatsApp, Admin, AI Agents
+// ═══════════════════════════════════════════════════════════════════════
+
 generator client {
   provider = "prisma-client-js"
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")       // PgBouncer connection (app queries)
+  // directUrl = env("DIRECT_URL")         // Direct connection (migrations only)
 }
 
+// ═══════════════════════════════════════════════════════════════════════
+// ENUMS
+// ═══════════════════════════════════════════════════════════════════════
+
+enum Persona {
+  ADVOCATE
+  BUSINESS
+  STUDENT
+}
+
+enum Plan {
+  FREE
+  STUDENT_PLAN
+  ADVOCATE_PRO
+  BUSINESS_PLAN
+}
+
+enum QueryMode {
+  RESEARCH
+  DRAFT
+  COMPLIANCE
+  CASE_ANALYSIS
+}
+
+enum QuerySource {
+  WEB
+  WHATSAPP
+  API
+}
+
+enum ConfidenceLevel {
+  HIGH
+  MEDIUM
+  LOW
+}
+
+enum DocumentType {
+  NDA
+  BAIL_APPLICATION
+  LEGAL_NOTICE
+  EMPLOYMENT_AGREEMENT
+  FREELANCER_AGREEMENT
+  RENT_AGREEMENT
+  CO_FOUNDER_AGREEMENT
+  CONSUMER_COMPLAINT
+  VAKALATNAMA
+  WRITTEN_STATEMENT
+  SALE_DEED
+  PARTNERSHIP_DEED
+  POWER_OF_ATTORNEY
+  AFFIDAVIT
+  OTHER
+}
+
+enum DocumentStatus {
+  DRAFT
+  FINALIZED
+  ARCHIVED
+}
+
+enum CompliancePriority {
+  URGENT
+  THIS_QUARTER
+  OPTIONAL
+  DONE
+  NOT_APPLICABLE
+}
+
+enum ComplianceCategory {
+  TAX
+  LABOUR
+  DATA_PRIVACY
+  CORPORATE
+  STATE_SPECIFIC
+  SECTOR_SPECIFIC
+  ENVIRONMENTAL
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  CANCELLED
+  EXPIRED
+  PAST_DUE
+  PAUSED
+}
+
+enum PaymentEventType {
+  PAYMENT_CAPTURED
+  PAYMENT_FAILED
+  SUBSCRIPTION_CHARGED
+  SUBSCRIPTION_CANCELLED
+  SUBSCRIPTION_PAUSED
+  REFUND_INITIATED
+  REFUND_PROCESSED
+}
+
+enum WhatsappSessionState {
+  IDLE
+  ONBOARDING_NAME
+  ONBOARDING_PERSONA
+  AWAITING_CLARIFICATION
+  PROCESSING
+}
+
+enum AgentRunStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum CitationType {
+  SECTION
+  CASE_LAW
+  RULE
+  NOTIFICATION
+}
+
+enum AdminActionType {
+  USER_PLAN_CHANGE
+  USER_SUSPENDED
+  USER_RESTORED
+  QUERY_LIMIT_RESET
+  REFUND_ISSUED
+  SYSTEM_CONFIG_CHANGED
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 1: USER
+// Central user model. Linked to Clerk for auth.
+// ═══════════════════════════════════════════════════════════════════════
+
 model User {
-  id        String   @id @default(cuid())
-  name      String
-  email     String   @unique
-  createdAt DateTime @default(now())
+  id                String    @id @default(cuid())
+
+  // Clerk auth
+  clerkId           String    @unique   // Clerk user ID (from JWT sub)
+  phone             String    @unique   // +91XXXXXXXXXX (primary identifier)
+  email             String?   @unique   // Optional
+
+  // Profile
+  name              String
+  persona           Persona
+  avatarUrl         String?
+
+  // Plan & usage
+  plan              Plan      @default(FREE)
+  queriesUsed       Int       @default(0)   // Resets monthly
+  queriesLimit      Int       @default(30)  // Set by plan
+  planResetDate     DateTime  @default(now())
+
+  // WhatsApp
+  whatsappLinked    Boolean   @default(false)
+  whatsappPhone     String?   @unique   // May differ from login phone
+
+  // Razorpay
+  razorpayCustomerId String?  @unique
+
+  // Metadata
+  isActive          Boolean   @default(true)
+  isSuspended       Boolean   @default(false)
+  suspendedReason   String?
+  lastActiveAt      DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  // Relations
+  conversations     Conversation[]
+  queries           Query[]
+  documents         Document[]
+  complianceReports ComplianceReport[]
+  subscription      Subscription?
+  paymentEvents     PaymentEvent[]
+  whatsappSession   WhatsappSession?
+  agentRuns         AgentRun[]
+  usageLogs         UsageLog[]
+  adminLogs         AdminLog[]       @relation("AdminTarget")
+
+  // Indexes — critical for performance at scale
+  @@index([phone])
+  @@index([clerkId])
+  @@index([plan])
+  @@index([createdAt])
+  @@map("users")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 2: CONVERSATION
+// Groups multiple queries into one chat session.
+// Like a ChatGPT conversation thread.
+// ═══════════════════════════════════════════════════════════════════════
+
+model Conversation {
+  id          String    @id @default(cuid())
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  title       String?   // Auto-generated from first query
+  persona     Persona   // Which dashboard was active
+  mode        QueryMode // Primary mode for this conversation
+  source      QuerySource @default(WEB)
+
+  isArchived  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  // Relations
+  queries     Query[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, isArchived])
+  @@map("conversations")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 3: QUERY
+// Every single AI interaction. The core data model.
+// Never delete. Append only.
+// ═══════════════════════════════════════════════════════════════════════
+
+model Query {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  conversationId  String?
+  conversation    Conversation? @relation(fields: [conversationId], references: [id])
+
+  // Input
+  mode            QueryMode
+  inputText       String    @db.Text       // Final text sent to Claude
+  inputAudioUrl   String?                  // R2 URL of voice file (if voice query)
+  isVoice         Boolean   @default(false)
+  transcription   String?   @db.Text       // Whisper output
+  language        String?   @default("en") // "hi" | "en" | "hi-en"
+
+  // Output
+  response        String    @db.Text       // Full Claude response
+  responseTokens  Int       @default(0)    // Output tokens used
+  promptTokens    Int       @default(0)    // Input tokens used
+  totalTokens     Int       @default(0)    // promptTokens + responseTokens
+
+  // Hallucination guard results
+  citationsRaw    Json?                    // Raw extracted citations before verification
+  citationsVerified Json?                  // After Kanoon verification [{text, act, section, verified, kanoonUrl}]
+  confidence      Float?                   // 0.0–1.0
+  confidenceLevel ConfidenceLevel?
+  hallucinationFlagged Boolean @default(false)
+
+  // Source and metadata
+  source          QuerySource @default(WEB)
+  latencyMs       Int         @default(0)  // Total response time
+
+  // Agent run that processed this query
+  agentRunId      String?
+  agentRun        AgentRun?   @relation(fields: [agentRunId], references: [id])
+
+  createdAt       DateTime  @default(now())
+
+  // Relations
+  citations       Citation[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([conversationId])
+  @@index([source])
+  @@index([mode])
+  @@index([createdAt])
+  @@map("queries")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 4: CITATION
+// Individual citations extracted from AI responses.
+// Verified against Indian Kanoon API.
+// ═══════════════════════════════════════════════════════════════════════
+
+model Citation {
+  id          String        @id @default(cuid())
+  queryId     String
+  query       Query         @relation(fields: [queryId], references: [id], onDelete: Cascade)
+
+  type        CitationType
+  rawText     String        // Exactly as it appeared in Claude response
+  actName     String?       // e.g. "Negotiable Instruments Act"
+  sectionNum  String?       // e.g. "138"
+  caseName    String?       // e.g. "Gurbaksh Singh Sibbia v. State of Punjab"
+  year        Int?          // Case year
+
+  // Verification
+  verified    Boolean       @default(false)
+  kanoonDocId String?       // Indian Kanoon document ID
+  kanoonUrl   String?       // Full URL to judgment
+  verifiedAt  DateTime?
+
+  createdAt   DateTime      @default(now())
+
+  @@index([queryId])
+  @@index([verified])
+  @@map("citations")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 5: DOCUMENT
+// AI-generated legal documents saved by users.
+// Supports versioning.
+// ═══════════════════════════════════════════════════════════════════════
+
+model Document {
+  id            String          @id @default(cuid())
+  userId        String
+  user          User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Source query that generated this document
+  queryId       String?
+
+  // Document details
+  type          DocumentType
+  title         String
+  status        DocumentStatus  @default(DRAFT)
+
+  // Content
+  content       String          @db.Text   // Raw text (editable in frontend)
+  contentHtml   String?         @db.Text   // Rendered HTML for PDF generation
+
+  // Exported files (stored in Cloudflare R2)
+  pdfUrl        String?         // R2 URL of generated PDF
+  docxUrl       String?         // R2 URL of generated Word file
+  pdfGeneratedAt DateTime?
+  docxGeneratedAt DateTime?
+
+  // Sharing
+  sharedToken   String?         @unique    // Token for public share link
+  isShared      Boolean         @default(false)
+  sharedAt      DateTime?
+
+  // Versioning
+  version       Int             @default(1)
+
+  // Metadata
+  parties       Json?           // [{name, role}] e.g. [{name:"Acme Ltd", role:"Disclosing Party"}]
+  jurisdiction  String?         // e.g. "Delhi Courts"
+  governingLaw  String?         // e.g. "Indian Contract Act 1872"
+
+  isArchived    Boolean         @default(false)
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+
+  // Relations
+  versions      DocumentVersion[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([userId, type])
+  @@index([sharedToken])
+  @@map("documents")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 6: DOCUMENT VERSION
+// Tracks every save of a document. Allows rollback.
+// ═══════════════════════════════════════════════════════════════════════
+
+model DocumentVersion {
+  id          String    @id @default(cuid())
+  documentId  String
+  document    Document  @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  version     Int
+  content     String    @db.Text    // Snapshot of content at this version
+  savedAt     DateTime  @default(now())
+  changeNote  String?   // Optional: what changed in this version
+
+  @@index([documentId, version])
+  @@map("document_versions")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 7: COMPLIANCE REPORT
+// Full compliance check result for a business.
+// ═══════════════════════════════════════════════════════════════════════
+
+model ComplianceReport {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Business profile used for this report
+  businessType    String    // e.g. "SaaS Startup"
+  state           String    // e.g. "Karnataka"
+  headcount       Int
+  revenueBracket  String    // e.g. "₹20L–1Cr"
+  hasUserData     Boolean   @default(false)  // DPDP Act applicability
+  isFood          Boolean   @default(false)  // FSSAI applicability
+  isFintech       Boolean   @default(false)  // RBI/SEBI applicability
+
+  // Report metadata
+  title           String    // e.g. "Compliance Report — SaaS, Bengaluru"
+  totalItems      Int       @default(0)
+  urgentCount     Int       @default(0)
+  completedCount  Int       @default(0)
+
+  // Exported file
+  pdfUrl          String?
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  // Relations
+  items           ComplianceItem[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@map("compliance_reports")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 8: COMPLIANCE ITEM
+// Individual checklist item within a compliance report.
+// ═══════════════════════════════════════════════════════════════════════
+
+model ComplianceItem {
+  id          String              @id @default(cuid())
+  reportId    String
+  report      ComplianceReport    @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  // Grouping
+  category    ComplianceCategory
+  priority    CompliancePriority  @default(THIS_QUARTER)
+
+  // Content
+  title       String              // e.g. "GST Return Filing (GSTR-3B)"
+  law         String              // e.g. "CGST Act 2017"
+  section     String?             // e.g. "Section 39"
+  requirement String              // What exactly must be done
+  deadline    String?             // e.g. "20th of every month"
+  penalty     String?             // e.g. "₹50/day late fee"
+  action      String?             // Specific actionable step
+
+  // User interaction
+  isCompleted Boolean             @default(false)
+  completedAt DateTime?
+  notes       String?             // User notes on this item
+
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([reportId, category])
+  @@index([reportId, priority])
+  @@map("compliance_items")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 9: SUBSCRIPTION
+// Razorpay subscription for a user.
+// ═══════════════════════════════════════════════════════════════════════
+
+model Subscription {
+  id                  String              @id @default(cuid())
+  userId              String              @unique
+  user                User                @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Razorpay identifiers
+  razorpaySubId       String              @unique  // sub_XXXX
+  razorpayPlanId      String                       // plan_XXXX
+
+  plan                Plan
+  status              SubscriptionStatus  @default(ACTIVE)
+
+  // Billing period
+  currentPeriodStart  DateTime
+  currentPeriodEnd    DateTime
+  nextBillingAt       DateTime?
+
+  // Cancellation
+  cancelledAt         DateTime?
+  cancelReason        String?
+  cancelAtPeriodEnd   Boolean             @default(false)
+
+  // Amount
+  amountInPaise       Int                 // e.g. 79900 = ₹799
+  currency            String              @default("INR")
+
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@index([status])
+  @@map("subscriptions")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 10: PAYMENT EVENT
+// Immutable log of every Razorpay webhook event.
+// Never update or delete — append only for audit trail.
+// ═══════════════════════════════════════════════════════════════════════
+
+model PaymentEvent {
+  id                String            @id @default(cuid())
+  userId            String?
+  user              User?             @relation(fields: [userId], references: [id])
+
+  // Razorpay event data
+  razorpayEventId   String            @unique  // Idempotency key
+  eventType         PaymentEventType
+  razorpayPaymentId String?
+  razorpaySubId     String?
+
+  // Amount
+  amountInPaise     Int               @default(0)
+  currency          String            @default("INR")
+
+  // Raw webhook payload (store everything for debugging)
+  payload           Json
+
+  // Processing
+  processed         Boolean           @default(false)
+  processedAt       DateTime?
+  processingError   String?
+
+  createdAt         DateTime          @default(now())
+
+  @@index([userId])
+  @@index([eventType])
+  @@index([processed])
+  @@map("payment_events")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 11: WHATSAPP SESSION
+// State for each WhatsApp user (registered or not).
+// Stores conversation context so Claude remembers previous messages.
+// ═══════════════════════════════════════════════════════════════════════
+
+model WhatsappSession {
+  id                String                @id @default(cuid())
+
+  // WhatsApp phone number (could be unregistered user)
+  phone             String                @unique  // +91XXXXXXXXXX
+
+  // Link to registered user (null if not yet signed up on web)
+  userId            String?               @unique
+  user              User?                 @relation(fields: [userId], references: [id])
+
+  // Bot state machine
+  state             WhatsappSessionState  @default(IDLE)
+
+  // Conversation context (last 6 messages for Claude context window)
+  contextMessages   Json                  @default("[]")
+
+  // Usage tracking (separate from web — same limit shared)
+  queriesThisMonth  Int                   @default(0)
+  monthResetDate    DateTime              @default(now())
+
+  // Metadata
+  lastMessageAt     DateTime              @default(now())
+  isBlocked         Boolean               @default(false)
+  totalQueries      Int                   @default(0)
+
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+
+  @@index([phone])
+  @@index([userId])
+  @@map("whatsapp_sessions")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 12: AGENT RUN
+// Logs every AI agent execution. Useful for debugging,
+// performance monitoring, and cost tracking.
+// ═══════════════════════════════════════════════════════════════════════
+
+model AgentRun {
+  id              String          @id @default(cuid())
+  userId          String
+  user            User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Which agent ran
+  agentType       QueryMode       // RESEARCH | DRAFT | COMPLIANCE | CASE_ANALYSIS
+  status          AgentRunStatus  @default(PENDING)
+
+  // Input
+  inputSummary    String?         // First 200 chars of input (for debugging)
+
+  // Pipeline steps (JSON array of step results)
+  steps           Json            @default("[]")
+  // Example: [{step:"INPUT_VALIDATION", status:"ok", durationMs:5},
+  //           {step:"CLAUDE_CALL", status:"ok", durationMs:4200, tokens:1240},
+  //           {step:"KANOON_VERIFY", status:"ok", durationMs:800, verified:2, failed:1}]
+
+  // Performance
+  totalDurationMs Int             @default(0)
+  claudeTokensIn  Int             @default(0)
+  claudeTokensOut Int             @default(0)
+  claudeCostUsd   Float           @default(0)  // Calculated from token counts
+
+  // Error handling
+  errorMessage    String?
+  errorStack      String?         @db.Text
+
+  createdAt       DateTime        @default(now())
+  completedAt     DateTime?
+
+  // Relations
+  queries         Query[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([agentType])
+  @@index([status])
+  @@index([createdAt])
+  @@map("agent_runs")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 13: USAGE LOG
+// Daily snapshot of each user's usage.
+// Used for admin analytics and billing audit.
+// ═══════════════════════════════════════════════════════════════════════
+
+model UsageLog {
+  id              String    @id @default(cuid())
+  userId          String
+  user            User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  date            DateTime  // Date this log covers (date only, not time)
+
+  // Query counts by mode
+  researchCount   Int       @default(0)
+  draftCount      Int       @default(0)
+  complianceCount Int       @default(0)
+  caseCount       Int       @default(0)
+  totalCount      Int       @default(0)
+
+  // Voice usage
+  voiceQueryCount Int       @default(0)
+  voiceMinutes    Float     @default(0)    // Total Whisper minutes used
+
+  // Source breakdown
+  webCount        Int       @default(0)
+  whatsappCount   Int       @default(0)
+
+  // Cost tracking
+  claudeCostUsd   Float     @default(0)
+  whisperCostUsd  Float     @default(0)
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([userId, date])   // One row per user per day
+  @@index([userId])
+  @@index([date])
+  @@map("usage_logs")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 14: VOICE TRANSCRIPTION
+// Stores Whisper STT results for audit and debugging.
+// ═══════════════════════════════════════════════════════════════════════
+
+model VoiceTranscription {
+  id              String      @id @default(cuid())
+
+  // Source
+  queryId         String?     @unique
+  audioUrl        String?     // R2 URL of original audio (retained 7 days)
+  audioSizeBytes  Int?
+  audioDurationSec Float?
+
+  // Transcription result
+  transcript      String      @db.Text
+  detectedLang    String?     // "hi" | "en" | "hi-en"
+  confidence      Float?      // Whisper confidence score
+
+  // Cost tracking
+  durationSeconds Float?
+  costUsd         Float?      // $0.006/min
+
+  source          QuerySource // WEB | WHATSAPP
+  createdAt       DateTime    @default(now())
+
+  @@map("voice_transcriptions")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 15: ADMIN LOG
+// Immutable audit trail of all admin actions.
+// ═══════════════════════════════════════════════════════════════════════
+
+model AdminLog {
+  id            String          @id @default(cuid())
+
+  // Who performed the action (admin's user ID)
+  adminId       String
+
+  // Who was affected
+  targetUserId  String?
+  targetUser    User?           @relation("AdminTarget", fields: [targetUserId], references: [id])
+
+  // What happened
+  action        AdminActionType
+  reason        String?
+  metadata      Json?           // Any additional context
+
+  // Before/after state for reversible actions
+  previousState Json?
+  newState      Json?
+
+  createdAt     DateTime        @default(now())
+
+  @@index([adminId])
+  @@index([targetUserId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("admin_logs")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 16: SYSTEM CONFIG
+// Key-value store for runtime configuration.
+// Change settings without redeploying.
+// ═══════════════════════════════════════════════════════════════════════
+
+model SystemConfig {
+  id          String    @id @default(cuid())
+  key         String    @unique   // e.g. "FREE_QUERY_LIMIT", "MAINTENANCE_MODE"
+  value       String    // e.g. "30", "false"
+  description String?
+  updatedBy   String?   // Admin user ID
+  updatedAt   DateTime  @updatedAt
+  createdAt   DateTime  @default(now())
+
+  @@map("system_config")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 17: WAITLIST
+// Email / phone capture for people who sign up before launch.
+// ═══════════════════════════════════════════════════════════════════════
+
+model Waitlist {
+  id          String    @id @default(cuid())
+  phone       String?   @unique
+  email       String?   @unique
+  name        String?
+  persona     Persona?
+  city        String?
+  referredBy  String?   // Referral code
+  notes       String?   // How they heard about Nyaai
+  isInvited   Boolean   @default(false)
+  invitedAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@map("waitlist")
 }
