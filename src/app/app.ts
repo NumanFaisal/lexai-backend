@@ -2,8 +2,15 @@ import compression from 'compression';
 import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
+import { env } from '../config/env';
+import { errorHandler } from '../shared/errors/error.handler';
+import { NotFoundError } from '../shared/errors/AppError';
+import { clerkMiddleware } from '@clerk/express'
+
+import authRoutes from '../modules/auth/auth.routes';
 
 const app = express();
+app.use(clerkMiddleware());
 
 /*
 |--------------------------------------------------------------------------
@@ -14,6 +21,10 @@ const app = express();
 app.use(helmet());
 
 app.use(cors());
+
+
+// Mount auth routes FIRST
+app.use('/api/v1/auth', authRoutes);
 
 /*
 |--------------------------------------------------------------------------
@@ -39,10 +50,14 @@ app.use(compression());
 |--------------------------------------------------------------------------
 */
 
-app.get('/health', (_req, res) => {
-  return res.status(200).json({
-    success: true,
+
+
+
+app.get('/api/health', (_req, res) => {
+  res.status(200).json({ 
+    status: 'ok',
     message: 'LexAI backend running',
+    environment: env.NODE_ENV 
   });
 });
 
@@ -64,11 +79,8 @@ app.get('/health', (_req, res) => {
 |--------------------------------------------------------------------------
 */
 
-app.use((_req, res) => {
-  return res.status(404).json({
-    success: false,
-    message: 'Route not found',
-  });
+app.use((req, res, next) => {
+  next(new NotFoundError(`Route ${req.originalUrl} not found`));
 });
 
 /*
@@ -78,5 +90,7 @@ app.use((_req, res) => {
 */
 
 // app.use(errorMiddleware);
+// The global error handler MUST be the very last middleware
+app.use(errorHandler);
 
 export default app;
