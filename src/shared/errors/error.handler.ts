@@ -5,9 +5,9 @@ import { env } from '../../config/env';
 
 export const errorHandler = (
   err: Error, 
-  req: Request, 
+  _req: Request, 
   res: Response, 
-  next: NextFunction
+  _next: NextFunction
 ) => {
   let statusCode = 500;
   let message = 'Internal Server Error';

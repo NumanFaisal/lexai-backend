@@ -79,7 +79,7 @@ app.get('/api/health', (_req, res) => {
 |--------------------------------------------------------------------------
 */
 
-app.use((req, res, next) => {
+app.use((req, _res, next) => {
   next(new NotFoundError(`Route ${req.originalUrl} not found`));
 });
 

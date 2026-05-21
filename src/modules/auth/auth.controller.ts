@@ -2,8 +2,8 @@
 import { Request, Response } from 'express';
 import { Webhook } from 'svix';
 import { env } from '../../config/env';
-import { syncUserToDatabase, updateUserPersona } from './auth.service';
-import { BadRequestError } from '../../shared/errors/AppError';
+import { syncUserToDatabase, updateUserPersona, getUserByClerkId } from './auth.service';
+import { BadRequestError, UnauthorizedError } from '../../shared/errors/AppError';
 import { Persona } from '@prisma/client';
 
 export const handleClerkWebhook = async (req: Request, res: Response) => {
@@ -50,5 +50,30 @@ export const selectPersona = async (req: Request, res: Response) => {
   res.status(200).json({
     success: true,
     data: { persona: updatedUser.persona }
+  });
+};
+
+export const getMe = async (req: Request, res: Response) => {
+  const clerkId = req.auth.userId;
+  if (!clerkId) {
+    throw new UnauthorizedError('Not authenticated');
+  }
+
+  let user = await getUserByClerkId(clerkId);
+  if (!user) {
+    const email = (req.auth as any)?.sessionClaims?.email || null;
+    const name = (req.auth as any)?.sessionClaims?.name || 'User';
+    user = await syncUserToDatabase({
+      id: clerkId,
+      email_addresses: email ? [{ email_address: email }] : [],
+      phone_numbers: [],
+      first_name: name.split(' ')[0] || '',
+      last_name: name.split(' ').slice(1).join(' ') || '',
+    });
+  }
+
+  res.status(200).json({
+    success: true,
+    data: user
   });
 };

@@ -24,3 +24,9 @@ export const updatePersonaInDb = async (clerkId: string, persona: Persona): Prom
     data: { persona },
   });
 };
+
+export const findUserByClerkId = async (clerkId: string): Promise<User | null> => {
+  return await prisma.user.findUnique({
+    where: { clerkId },
+  });
+};

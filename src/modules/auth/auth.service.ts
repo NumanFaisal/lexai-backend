@@ -1,6 +1,6 @@
 // src/modules/auth/auth.service.ts
 import { Persona } from '@prisma/client';
-import { upsertUser, updatePersonaInDb } from './auth.repository';
+import { upsertUser, updatePersonaInDb, findUserByClerkId } from './auth.repository';
 
 export const syncUserToDatabase = async (clerkData: any) => {
   const { id, first_name, last_name, email_addresses, phone_numbers } = clerkData;
@@ -14,4 +14,8 @@ export const syncUserToDatabase = async (clerkData: any) => {
 
 export const updateUserPersona = async (clerkId: string, persona: Persona) => {
   return await updatePersonaInDb(clerkId, persona);
+};
+
+export const getUserByClerkId = async (clerkId: string) => {
+  return await findUserByClerkId(clerkId);
 };
