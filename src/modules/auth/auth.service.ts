@@ -1,21 +1,57 @@
-// src/modules/auth/auth.service.ts
-import { Persona } from '@prisma/client';
-import { upsertUser, updatePersonaInDb, findUserByClerkId } from './auth.repository';
+import prisma from '../../config/db';
+import bcrypt from 'bcrypt';
+import jwt from 'jsonwebtoken';
+// import { env } from '../../config/env'
+import { AppError, UnauthorizedError } from '../../shared/errors/AppError';
 
-export const syncUserToDatabase = async (clerkData: any) => {
-  const { id, first_name, last_name, email_addresses, phone_numbers } = clerkData;
-  
-  const phone = phone_numbers?.[0]?.phone_number || '';
-  const email = email_addresses?.[0]?.email_address || null;
-  const name = `${first_name || ''} ${last_name || ''}`.trim() || 'User';
-
-  return await upsertUser({ clerkId: id, phone, email, name });
+// 1. Generate JWT Token Helper
+const generateToken = (userId: string) => {
+  // Set this to whatever you want! '7d' = 7 days, '1y' = 1 year.
+  return jwt.sign({ userId }, process.env.JWT_SECRET || 'fallback_secret', {
+    expiresIn: '7d', 
+  });
 };
 
-export const updateUserPersona = async (clerkId: string, persona: Persona) => {
-  return await updatePersonaInDb(clerkId, persona);
+// 2. Sign Up Logic
+export const registerUser = async (data: any) => {
+  // Check if user already exists
+  const existingUser = await prisma.user.findUnique({ where: { email: data.email } });
+  if (existingUser) {
+    // third parameter is a boolean (isOperational), not a string code
+    throw new AppError('Email is already in use', 400, true);
+  }
+
+  // Hash the password (10 salt rounds is standard)
+  const hashedPassword = await bcrypt.hash(data.password, 10);
+
+  // Create user in DB
+  const user = await prisma.user.create({
+    data: {
+      email: data.email,
+      password: hashedPassword,
+      name: data.username,
+      persona: data.persona,
+      phone: data.phone || '',
+    },
+  });
+
+  const token = generateToken(user.id);
+  return { user, token };
 };
 
-export const getUserByClerkId = async (clerkId: string) => {
-  return await findUserByClerkId(clerkId);
+// 3. Sign In Logic
+export const loginUser = async (data: any) => {
+  const user = await prisma.user.findUnique({ where: { email: data.email } });
+  if (!user) {
+    throw new UnauthorizedError('Invalid email or password');
+  }
+
+  // Compare the plain text password with the hashed password in DB
+  const isPasswordValid = await bcrypt.compare(data.password, user.password);
+  if (!isPasswordValid) {
+    throw new UnauthorizedError('Invalid email or password');
+  }
+
+  const token = generateToken(user.id);
+  return { user, token };
 };

@@ -10,10 +10,19 @@ const envSchema = z.object({
   DATABASE_URL: z.string(),
   // DIRECT_URL: z.string(),
   // FRONTEND_URL: z.string().url(),
-  CLERK_SECRET_KEY: z.string(),
-  CLERK_PUBLISHABLE_KEY: z.string().optional(),
-  CLERK_WEBHOOK_SECRET: z.string(),
-  // ANTHROPIC_API_KEY: z.string(),
+
+  JWT_SECRET: z.string().default('fallback_secret'),
+
+  // Ai model API keys
+  ANTHROPIC_API_KEY: z.string(),
+  OPENAI_API_KEY: z.string(),
+  GOOGLE_API_KEY: z.string(),
+
+  // Redis (Upstash) URL
+  UPSTASH_REDIS_URL: z.string(),
+
+  // Kanoon API key
+  INDIAN_KANOON_API_KEY: z.string(),
   // Add other keys here as you need them (Razorpay, Twilio, etc.)
 });
 

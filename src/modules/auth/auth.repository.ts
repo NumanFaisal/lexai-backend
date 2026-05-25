@@ -2,31 +2,41 @@
 import prisma from '../../config/db';
 import { Persona, Plan, User } from '@prisma/client';
 
-export const upsertUser = async (data: { clerkId: string, phone: string, email: string | null, name: string }): Promise<User> => {
-  return await prisma.user.upsert({
-    where: { clerkId: data.clerkId },
-    update: { email: data.email, name: data.name },
-    create: {
-      clerkId: data.clerkId,
-      phone: data.phone,
+export const createUser = async (data: { 
+  email: string; 
+  passwordHash: string; 
+  name: string; 
+  persona: Persona 
+}): Promise<User> => {
+  return await prisma.user.create({
+    data: {
       email: data.email,
+      password: data.passwordHash,
       name: data.name,
-      persona: Persona.ADVOCATE,
+      persona: data.persona,
       plan: Plan.FREE,
       queriesLimit: 30,
+      // phone is required by Prisma's UserCreateInput; provide empty string when not available
+      phone: '',
     },
   });
 };
 
-export const updatePersonaInDb = async (clerkId: string, persona: Persona): Promise<User> => {
+export const updatePersonaInDb = async (userId: string, persona: Persona): Promise<User> => {
   return await prisma.user.update({
-    where: { clerkId },
+    where: { id: userId },
     data: { persona },
   });
 };
 
-export const findUserByClerkId = async (clerkId: string): Promise<User | null> => {
+export const findUserByEmail = async (email: string): Promise<User | null> => {
   return await prisma.user.findUnique({
-    where: { clerkId },
+    where: { email },
+  });
+};
+
+export const findUserById = async (id: string): Promise<User | null> => {
+  return await prisma.user.findUnique({
+    where: { id },
   });
 };

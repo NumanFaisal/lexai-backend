@@ -5,12 +5,12 @@ import helmet from 'helmet';
 import { env } from '../config/env';
 import { errorHandler } from '../shared/errors/error.handler';
 import { NotFoundError } from '../shared/errors/AppError';
-import { clerkMiddleware } from '@clerk/express'
 
 import authRoutes from '../modules/auth/auth.routes';
 
+import chatRoutes from '../modules/chat/chat.routes';
+
 const app = express();
-app.use(clerkMiddleware());
 
 /*
 |--------------------------------------------------------------------------
@@ -67,11 +67,8 @@ app.get('/api/health', (_req, res) => {
 |--------------------------------------------------------------------------
 */
 
-// app.use('/api/v1/auth', authRoutes);
-
-// app.use('/api/v1/chat', chatRoutes);
-
-// app.use('/api/v1/documents', documentRoutes);
+app.use('/api/v1/auth', authRoutes);
+app.use('/api/v1/chat', chatRoutes);
 
 /*
 |--------------------------------------------------------------------------

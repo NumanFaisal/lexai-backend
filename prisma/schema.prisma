@@ -150,10 +150,9 @@ enum AdminActionType {
 model User {
   id                String    @id @default(cuid())
 
-  // Clerk auth
-  clerkId           String    @unique   // Clerk user ID (from JWT sub)
-  phone             String    @unique   // +91XXXXXXXXXX (primary identifier)
-  email             String?   @unique   // Optional
+  phone             String    @unique   
+  email             String    @unique
+  password          String
 
   // Profile
   name              String
@@ -195,7 +194,6 @@ model User {
 
   // Indexes — critical for performance at scale
   @@index([phone])
-  @@index([clerkId])
   @@index([plan])
   @@index([createdAt])
   @@map("users")
