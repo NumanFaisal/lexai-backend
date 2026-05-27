@@ -6,15 +6,12 @@ export const saveResearchQuery = async (data: {
   inputText: string;
   response: string;
   confidenceScore: number;
-  citationsRaw: any;
-  citationsVerified: any;
+  citationsRaw: any[];
+  citationsVerified: any[];
 }) => {
   let confidenceLevel: ConfidenceLevel = ConfidenceLevel.HIGH;
   if (data.confidenceScore < 0.5) confidenceLevel = ConfidenceLevel.LOW;
   else if (data.confidenceScore < 0.8) confidenceLevel = ConfidenceLevel.MEDIUM;
-
-  // 🔥 ADD THIS EXACT LINE:
-  console.log("🚨 HEY SERVER, I AM RUNNING THE NEW CODE WITH MODE:", QueryMode.RESEARCH);
 
   return await prisma.query.create({
     data: {
@@ -27,10 +24,22 @@ export const saveResearchQuery = async (data: {
       citationsRaw: data.citationsRaw || [],
       citationsVerified: data.citationsVerified || [],
       hallucinationFlagged: data.confidenceScore < 0.5,
+      
+      // 🔥 ADD THIS: Save individual records to the Citation table
+      citations: {
+        create: data.citationsVerified.map((c) => ({
+          type: c.type || "OTHER",
+          rawText: c.rawText,
+          actName: c.actName,
+          sectionNum: c.sectionNum,
+          caseName: c.caseName,
+          verified: c.verified,
+          kanoonUrl: c.kanoonUrl,
+        }))
+      }
     },
   });
 };
-
 
 
 // Add this below your saveResearchQuery function

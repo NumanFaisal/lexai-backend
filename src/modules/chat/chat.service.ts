@@ -1,37 +1,40 @@
 import { SupportedModel } from '@/config/llm.config';
-import { researchPipeline } from '../../ai/pipelines/research.pipeline';
+import { researchPipeline, runResearchPipeline } from '../../ai/pipelines/research.pipeline';
 import { getUserHistory, saveResearchQuery } from './chat.repository';
 import { redisClient } from '@/config/redis';
 
 export const processResearchQuery = async (userId: string, query: string, model: SupportedModel) => {
   console.log(`🧠 Starting AI Research for user ${userId} using ${model}...`);
   
-  // 1. Trigger the LangGraph AI Pipeline
-  const finalState = await researchPipeline.invoke({
+  console.log(`🧠 Starting AI Research for user ${userId} using ${model}...`);
+  
+  // 1. Trigger the LangGraph Wrapper Function
+  const result = await runResearchPipeline({
     query: query,
+    userId: userId,
     selectedModel: model
+    // Note: You can pass conversationHistory here once you fetch it from the DB
   });
 
   // 2. Save the results to PostgreSQL
   const savedRecord = await saveResearchQuery({
     userId: userId,
     inputText: query,
-    response: finalState.finalResponse || "Error generating response.",
-    confidenceScore: finalState.confidenceScore || 1.0, // Default to 1.0 if no citations were needed
-    citationsRaw: finalState.citationsRaw,
-    citationsVerified: finalState.citationsVerified
+    response: result.finalResponse,
+    confidenceScore: result.confidenceScore,
+    citationsRaw: [], // You can omit this or return it from the wrapper if needed for debugging
+    citationsVerified: result.citationsVerified
   });
 
   // 🔥 CACHE INVALIDATION: 
-  // Delete the old history cache so the frontend gets this new message next time
   await redisClient.del(`history:${userId}`);
 
   // 3. Return the clean data to the controller
   return {
     queryId: savedRecord.id,
-    response: finalState.finalResponse,
-    confidenceScore: finalState.confidenceScore,
-    citations: finalState.citationsVerified,
+    response: result.finalResponse,
+    confidenceScore: result.confidenceScore,
+    citations: result.citationsVerified,
   };
 };
 

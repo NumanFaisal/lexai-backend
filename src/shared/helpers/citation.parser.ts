@@ -1,43 +1,48 @@
-export interface  ExtractedCitation {
-  type: 'SECTION' | 'CASE_LAW';
+import { CitationType } from "@prisma/client";
+
+export interface ExtractedCitation {
+  type: CitationType;
   rawText: string;
   actName?: string;
   sectionNum?: string;
   caseName?: string;
 }
 
-export const extractCitations = (text: string): ExtractedCitation[] => {
+export function extractCitations(text: string): ExtractedCitation[] {
   const citations: ExtractedCitation[] = [];
 
-  // 1. Regex to match Sections of Acts
-  // Example matches: "Section 138 of the Negotiable Instruments Act", "Sec 302 of IPC", "Section 439 of CrPC"
-  const sectionRegex = /(?:Section|Sec\.?)\s+(\d+[A-Z]?)\s+of\s+(?:the\s+)?([A-Za-z\s]+?(?:Act|Code|IPC|CrPC))/gi;
+  // 1. Extract Sections (e.g., "Section 438 of the Criminal Procedure Code")
+  const sectionRegex = /Section\s+(\d+[A-Z]?)\s+of\s+(?:the\s+)?([A-Za-z\s]+?(?:Act|Code|CrPC|IPC|BNS|BNSS))/gi;
   let sectionMatch;
-
   while ((sectionMatch = sectionRegex.exec(text)) !== null) {
     citations.push({
-      type: 'SECTION',
+      type: "SECTION",
       rawText: sectionMatch[0].trim(),
-      sectionNum: sectionMatch[1],
+      sectionNum: sectionMatch[1].trim(),
       actName: sectionMatch[2].trim(),
-    })
-  }
-
-  // 2. Regex to match Case Laws
-  // Example matches: "Kesavananda Bharati v. State of Kerala", "State of Maharashtra vs. XYZ"
-  const caseRegex = /([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:v\.|vs\.|versus)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/g;
-  let caseMatch;
-
-  while ((caseMatch = caseRegex.exec(text)) !== null) {
-    citations.push({
-      type: 'CASE_LAW',
-      rawText: caseMatch[0].trim(),
-      caseName: caseMatch[0].trim(),
     });
   }
 
-  // Optional: Remove exact duplicates if Claude cites the same section multiple times
-  const uniqueCitations = Array.from(new Map(citations.map(c => [c.rawText, c])).values());
+  // 2. Extract Case Laws (Allows full names with uppercase, lowercase, and dots)
+  const caseRegex = /([A-Z][a-zA-Z\s\.\&]+?)\s+v\.?\s+([A-Z][a-zA-Z\s\.\&]+?)(?=\s*\(|\s*—|$)/g;
+  let caseMatch;
+  while ((caseMatch = caseRegex.exec(text)) !== null) {
+    const plaintiff = caseMatch[1].trim();
+    const defendant = caseMatch[2].trim();
+    
+    // Filter out false positives
+    if (plaintiff.includes("Section") || defendant.includes("Section")) continue;
+    
+    citations.push({
+      type: "CASE_LAW",
+      rawText: `${plaintiff} v. ${defendant}`,
+      caseName: `${plaintiff} v. ${defendant}`,
+    });
+  }
+
+  // 3. Remove duplicates based on rawText
+  const uniqueCitations = Array.from(new Set(citations.map(c => c.rawText)))
+    .map(text => citations.find(c => c.rawText === text) as ExtractedCitation);
 
   return uniqueCitations;
 }

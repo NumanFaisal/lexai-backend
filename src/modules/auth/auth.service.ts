@@ -31,7 +31,7 @@ export const registerUser = async (data: any) => {
       password: hashedPassword,
       name: data.username,
       persona: data.persona,
-      phone: data.phone || '',
+      phone: data.phone || `TEMP_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
     },
   });
 

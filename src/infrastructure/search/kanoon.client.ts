@@ -29,6 +29,7 @@ export const verifyWithKanoon = async (query: string): Promise<KanoonVerificatio
     const kanoonUrl = `https://api.indiankanoon.org/search/?formInput=${encodeURIComponent(query)}`;
 
     const response = await fetch(kanoonUrl, {
+      method: 'POST',
       headers: {
         'Authorization': `Token ${env.INDIAN_KANOON_API_KEY}`,
         'Content-Type': 'application/json',
