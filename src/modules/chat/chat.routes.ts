@@ -1,7 +1,7 @@
 // src/modules/chat/chat.routes.ts
 import { Router } from 'express';
 import express from 'express';
-import { getChatHistory, handleResearchChat } from './chat.controller';
+import { getChatHistory, handleResearchChat, getConversations, getConversation } from './chat.controller';
 import { asyncHandler } from '../../shared/utils/async.wrapper';
 import { requireAuth } from '../../shared/middleware/auth.middleware';
 import { validate } from '../../shared/middleware/validate.middleware';
@@ -26,6 +26,20 @@ router.get(
   requireAuth,                 // 1. Ensure user is logged in
   aiRateLimiter,
   asyncHandler(getChatHistory) // 2. Fetch and return history
+);
+
+// GET /api/v1/chat/conversations
+router.get(
+  '/conversations',
+  requireAuth,
+  asyncHandler(getConversations)
+);
+
+// GET /api/v1/chat/conversations/:id
+router.get(
+  '/conversations/:id',
+  requireAuth,
+  asyncHandler(getConversation)
 );
 
 export default router;

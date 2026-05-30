@@ -1,3 +1,5 @@
+// src\app\app.ts
+
 import compression from 'compression';
 import cors from 'cors';
 import express from 'express';
@@ -6,9 +8,12 @@ import { env } from '../config/env';
 import { errorHandler } from '../shared/errors/error.handler';
 import { NotFoundError } from '../shared/errors/AppError';
 
+// Routes imports
 import authRoutes from '../modules/auth/auth.routes';
 
 import chatRoutes from '../modules/chat/chat.routes';
+
+import documentsRoutes from '../modules/documents/documents.routes';
 
 const app = express();
 
@@ -69,6 +74,7 @@ app.get('/api/health', (_req, res) => {
 
 app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/chat', chatRoutes);
+app.use('/api/v1/documents', documentsRoutes);
 
 /*
 |--------------------------------------------------------------------------

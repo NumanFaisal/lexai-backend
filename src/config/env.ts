@@ -23,6 +23,15 @@ const envSchema = z.object({
 
   // Kanoon API key
   INDIAN_KANOON_API_KEY: z.string(),
+
+
+  // R2 Storage (Cloudflare) credentials
+  R2_ACCOUNT_ID: z.string(),
+  R2_ACCESS_KEY_ID: z.string(),
+  R2_SECRET_ACCESS_KEY: z.string(),
+  R2_BUCKET_NAME: z.string(),
+
+  
   // Add other keys here as you need them (Razorpay, Twilio, etc.)
 });
 

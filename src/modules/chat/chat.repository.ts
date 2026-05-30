@@ -59,3 +59,38 @@ export const getUserHistory = async (userId: string, limit: number = 50) => {
     }
   });
 };
+
+export const getConversationsList = async (userId: string, skip: number, take: number) => {
+  return await prisma.conversation.findMany({
+    where: { userId, isArchived: false },
+    orderBy: { updatedAt: 'desc' },
+    skip,
+    take,
+    select: {
+      id: true,
+      title: true,
+      persona: true,
+      mode: true,
+      source: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+};
+
+export const countConversations = async (userId: string) => {
+  return await prisma.conversation.count({
+    where: { userId, isArchived: false },
+  });
+};
+
+export const getConversationById = async (id: string, userId: string) => {
+  return await prisma.conversation.findFirst({
+    where: { id, userId, isArchived: false },
+    include: {
+      queries: {
+        orderBy: { createdAt: 'asc' },
+      },
+    },
+  });
+};
