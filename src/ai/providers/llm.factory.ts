@@ -1,5 +1,6 @@
 import { env } from "../../config/env";
 import { LLMConfig, SupportedModel } from "@/config/llm.config";
+export { LLMConfig, SupportedModel };
 import { ChatOpenAI } from "@langchain/openai";
 import { ChatAnthropic } from "@langchain/anthropic";
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";

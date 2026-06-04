@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { asyncHandler } from '../../shared/utils/async.wrapper';
 import { requireAuth } from '../../shared/middleware/auth.middleware';
 import { validate } from '../../shared/middleware/validate.middleware';
-import { createDocumentSchema, updateDocumentSchema } from './documents.schema';
+import { createDocumentSchema, reviewDocumentSchema, updateDocumentSchema } from './documents.schema';
 import * as controller from './documents.controller';
 
 const router = Router();
@@ -35,6 +35,7 @@ router.delete('/:id/share', asyncHandler(controller.disableShare));
 // Versioning
 router.get('/:id/versions', asyncHandler(controller.getVersions));
 router.post('/:id/versions/restore', asyncHandler(controller.restoreVersion));
+router.post('/:id/review', validate(reviewDocumentSchema), asyncHandler(controller.reviewDocument));
 
 // Save from AI Chat
 router.post('/save-from-chat', asyncHandler(controller.saveFromChat));

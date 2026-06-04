@@ -110,6 +110,24 @@ export const restoreVersion = async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data: doc });
 };
 
+export const reviewDocument = async (req: Request, res: Response) => {
+  const documentId = getId(req.params.id);
+  const { content, instructions } = req.body;
+  
+  const updatedDoc = await docService.aiReviewAndEditDocument(
+    req.auth!.userId, 
+    documentId, 
+    content, 
+    instructions
+  );
+  
+  res.status(200).json({ 
+    success: true, 
+    message: 'AI Review complete. New version saved.',
+    data: updatedDoc 
+  });
+};
+
 // ─────────────────────────────────────────────────────────────────────────────
 // 5. SAVE FROM CHAT
 // ─────────────────────────────────────────────────────────────────────────────

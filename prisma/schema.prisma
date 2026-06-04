@@ -191,6 +191,7 @@ model User {
   agentRuns         AgentRun[]
   usageLogs         UsageLog[]
   adminLogs         AdminLog[]       @relation("AdminTarget")
+  userCaseFiles     UserCaseFile[]
 
   // Indexes — critical for performance at scale
   @@index([phone])
@@ -655,6 +656,9 @@ model UsageLog {
   claudeCostUsd   Float     @default(0)
   whisperCostUsd  Float     @default(0)
 
+  // Drafting limits
+  draftingWordsUsed Int     @default(0)
+
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
@@ -763,4 +767,65 @@ model Waitlist {
   createdAt   DateTime  @default(now())
 
   @@map("waitlist")
+}
+
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 18: PRECEDENT (VECTOR STORE)
+// Stores Indian case law and precedents for semantic similarity search.
+// ═══════════════════════════════════════════════════════════════════════
+
+model Precedent {
+  id          String   @id @default(cuid())
+  title       String   // e.g., "Gurbaksh Singh Sibbia v. State of Punjab"
+  content     String   @db.Text
+  
+  // 1536 is the standard dimension size for OpenAI's text-embedding-3-small
+  embedding   Unsupported("vector(1536)")
+  
+  // Metadata for hybrid search filtering (optional but recommended)
+  metadata    Json?    // e.g., {"year": 1980, "court": "Supreme Court", "act": "CrPC"}
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("precedents")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 19: USER CASE FILE
+// Stores user-uploaded case files (PDF, Image, Audio, DOCX)
+// ═══════════════════════════════════════════════════════════════════════
+
+model UserCaseFile {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String
+  r2Key       String   // Storage key in R2
+  fileType    String   // 'PDF', 'IMAGE', 'AUDIO', 'DOCX'
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  chunks      UserCaseChunk[]
+
+  @@index([userId])
+  @@map("user_case_files")
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// MODEL 20: USER CASE CHUNK
+// Stores vector chunks for a specific user case file
+// ═══════════════════════════════════════════════════════════════════════
+
+model UserCaseChunk {
+  id          String   @id @default(cuid())
+  caseFileId  String
+  caseFile    UserCaseFile @relation(fields: [caseFileId], references: [id], onDelete: Cascade)
+  content     String   @db.Text
+  embedding   Unsupported("vector(1536)")
+  createdAt   DateTime @default(now())
+
+  @@index([caseFileId])
+  @@map("user_case_chunks")
 }

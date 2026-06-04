@@ -1,5 +1,5 @@
 import prisma from "@/config/db";
-import { QueryMode, ConfidenceLevel } from '@prisma/client';
+import { ConfidenceLevel } from '@prisma/client';
 
 export const saveResearchQuery = async (data: {
   userId: string;

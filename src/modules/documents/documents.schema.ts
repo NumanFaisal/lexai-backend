@@ -23,3 +23,10 @@ export const updateDocumentSchema = z.object({
   }),
 });
 
+
+export const reviewDocumentSchema = z.object({
+  body: z.object({
+    content: z.string().min(10, "Document content is required for review"),
+    instructions: z.string().optional(),
+  }),
+});
