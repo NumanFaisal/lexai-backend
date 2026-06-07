@@ -223,6 +223,8 @@ model Conversation {
   // Relations
   queries     Query[]
 
+  userCaseFiles  UserCaseFile[]
+
   @@index([userId, createdAt(sort: Desc)])
   @@index([userId, isArchived])
   @@map("conversations")
@@ -801,6 +803,11 @@ model UserCaseFile {
   id          String   @id @default(cuid())
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+
   title       String
   r2Key       String   // Storage key in R2
   fileType    String   // 'PDF', 'IMAGE', 'AUDIO', 'DOCX'
@@ -810,6 +817,7 @@ model UserCaseFile {
   chunks      UserCaseChunk[]
 
   @@index([userId])
+  @@index([conversationId]) // Crucial for fast RAG Lookups
   @@map("user_case_files")
 }
 

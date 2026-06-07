@@ -8,6 +8,13 @@ export interface PrecedentSearchResult {
   similarity: number; // 0.0 to 1.0 — higher is more similar
 }
 
+export interface ChatDocumentSearchResult {
+  id: string;
+  fileTitle: string;
+  content: string;
+  similarity: number;
+}
+
 export class VectorStore {
   /**
    * Finds the most semantically relevant case precedents using cosine similarity.
@@ -36,6 +43,33 @@ export class VectorStore {
       FROM precedents
       WHERE 1 - (embedding <=> ${embeddingString}::vector) > ${minScore}
       ORDER BY embedding <=> ${embeddingString}::vector
+      LIMIT ${limit};
+    `;
+
+    return results;
+  }
+
+  // Searches isolated user documents tied to a specific chat session
+  static async searchChatDocuments(
+    conversationId: string,
+    embedding: number[],
+    limit: number = 4,
+    minScore: number = 0.4
+  ): Promise<ChatDocumentSearchResult[]> {
+    const embeddingString = `[${embedding.join(',')}]`;
+
+    // Join UserCaseChunk through UserCaseFile to enforce conversationId constraints
+    const results = await prisma.$queryRaw<ChatDocumentSearchResult[]>`
+      SELECT
+        ucc.id,
+        ucf.title AS "fileTitle",
+        ucc.content,
+        1 - (ucc.embedding <=> ${embeddingString}::vector) AS similarity
+      FROM user_case_chunks ucc
+      JOIN user_case_files ucf ON ucc."caseFileId" = ucf.id
+      WHERE ucf."conversationId" = ${conversationId}
+        AND 1 - (ucc.embedding <=> ${embeddingString}::vector) > ${minScore}
+      ORDER BY ucc.embedding <=> ${embeddingString}::vector
       LIMIT ${limit};
     `;
 
