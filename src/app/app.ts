@@ -15,6 +15,7 @@ import chatRoutes from '../modules/chat/chat.routes';
 
 import documentsRoutes from '../modules/documents/documents.routes';
 import casesRoutes from '../modules/cases/cases.routes';
+import complianceRoutes from '../modules/compliance/compliance.routes';
 
 const app = express();
 
@@ -77,6 +78,7 @@ app.use('/api/v1/auth', authRoutes);
 app.use('/api/v1/chat', chatRoutes);
 app.use('/api/v1/documents', documentsRoutes);
 app.use('/api/v1/cases', casesRoutes);
+app.use('/api/v1/compliance', complianceRoutes);
 
 /*
 |--------------------------------------------------------------------------

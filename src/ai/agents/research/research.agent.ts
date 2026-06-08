@@ -41,7 +41,7 @@ export class ResearchAgent extends BaseAgent {
   async run(input: ResearchAgentInput): Promise<ResearchAgentOutput> {
     this.startTimer();
 
-    const { query, userId, model = 'gemini-2.0-flash', conversationHistory = [] } = input;
+    const { query, userId, model = 'gpt-4o', conversationHistory = [] } = input;
 
     // ── Step 1: Check Redis cache ──────────────────────────────────────────
     const cacheKey = this.buildCacheKey(userId, query);

@@ -32,7 +32,7 @@ export interface BusinessProfile {
 
 export interface ComplianceChecklistItem {
   category:    string;
-  priority:    'URGENT' | 'THIS_QUARTER' | 'OPTIONAL';
+  priority:    'URGENT' | 'THIS_QUARTER' | 'OPTIONAL' | 'NOT_APPLICABLE';
   title:       string;
   law:         string;
   section?:    string;
@@ -68,7 +68,7 @@ export const ComplianceStateAnnotation = Annotation.Root({
   }),
   selectedModel: Annotation<SupportedModel>({
     reducer: (_, next) => next,
-    default: () => 'gemini-2.0-flash',
+    default: () => 'gpt-4o',
   }),
   userId: Annotation<string>({
     reducer: (_, next) => next,
@@ -410,7 +410,7 @@ export interface ComplianceResult {
 }
 
 export async function runCompliancePipeline(options: RunComplianceOptions): Promise<ComplianceResult> {
-  const { businessProfile, userId, selectedModel = 'gemini-2.0-flash' } = options;
+  const { businessProfile, userId, selectedModel = 'gpt-4o' } = options;
 
   const result = await compliancePipeline.invoke({ businessProfile, userId, selectedModel });
 

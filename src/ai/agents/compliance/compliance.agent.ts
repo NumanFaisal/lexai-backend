@@ -58,9 +58,10 @@ function mapCategory(cat: string): ComplianceCategory {
 // Map LLM priority strings → Prisma enum
 function mapPriority(priority: string): CompliancePriority {
   const map: Record<string, CompliancePriority> = {
-    URGENT:       CompliancePriority.URGENT,
-    THIS_QUARTER: CompliancePriority.THIS_QUARTER,
-    OPTIONAL:     CompliancePriority.OPTIONAL,
+    URGENT:         CompliancePriority.URGENT,
+    THIS_QUARTER:   CompliancePriority.THIS_QUARTER,
+    OPTIONAL:       CompliancePriority.OPTIONAL,
+    NOT_APPLICABLE: CompliancePriority.NOT_APPLICABLE,
   };
   return map[priority?.toUpperCase()] ?? CompliancePriority.THIS_QUARTER;
 }
@@ -73,7 +74,7 @@ export class ComplianceAgent extends BaseAgent {
   async run(input: ComplianceAgentInput): Promise<ComplianceAgentOutput> {
     this.startTimer();
 
-    const { businessProfile, userId, model = 'gemini-2.0-flash' } = input;
+    const { businessProfile, userId, model = 'gpt-4o' } = input;
 
     // ── Step 1: Check Redis cache ──────────────────────────────────────────
     const cacheKey = this.buildCacheKey(

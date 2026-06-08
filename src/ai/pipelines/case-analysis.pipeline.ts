@@ -42,7 +42,7 @@ export const CaseAnalysisStateAnnotation = Annotation.Root({
   }),
   selectedModel: Annotation<SupportedModel>({
     reducer: (_, next) => next,
-    default: () => 'gemini-2.0-flash',
+    default: () => 'gpt-4o',
   }),
   userId: Annotation<string>({
     reducer: (_, next) => next,
@@ -443,7 +443,7 @@ export async function runCaseAnalysisPipeline(
   const {
     query,
     userId,
-    selectedModel       = 'gemini-2.0-flash',
+    selectedModel       = 'gpt-4o',
     conversationHistory = [],
   } = options;
 
