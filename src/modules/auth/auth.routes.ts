@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import express from 'express';
 import { handleSignup, handleSignin } from './auth.controller';
 import { asyncHandler } from '../../shared/utils/async.wrapper';
@@ -13,7 +13,7 @@ const router = Router();
 router.post('/signup', express.json(), validate(signupSchema), asyncHandler(handleSignup));
 router.post('/signin', express.json(), validate(signinSchema), asyncHandler(handleSignin));
 
-router.get('/me', requireAuth, asyncHandler(async (req, res) => {
+router.get('/me', requireAuth, asyncHandler(async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
   if (!userId) {
     res.status(401).json({ success: false, message: 'Not authenticated' });

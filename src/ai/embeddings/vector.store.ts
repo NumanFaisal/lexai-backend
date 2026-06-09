@@ -75,4 +75,27 @@ export class VectorStore {
 
     return results;
   }
+
+  // Searches chunks of a specific user-uploaded case file
+  static async searchCaseDocuments(
+    caseId: string,
+    embedding: number[],
+    limit: number = 5,
+    minScore: number = 0.4
+  ): Promise<Array<{ content: string; similarity: number }>> {
+    const embeddingString = `[${embedding.join(',')}]`;
+
+    const results = await prisma.$queryRaw<Array<{ content: string; similarity: number }>>`
+      SELECT
+        content,
+        1 - (embedding <=> ${embeddingString}::vector) AS similarity
+      FROM user_case_chunks
+      WHERE "caseFileId" = ${caseId}
+        AND 1 - (embedding <=> ${embeddingString}::vector) > ${minScore}
+      ORDER BY embedding <=> ${embeddingString}::vector
+      LIMIT ${limit};
+    `;
+
+    return results;
+  }
 }

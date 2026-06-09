@@ -12,10 +12,12 @@ import { AppError } from '../../shared/errors/AppError';
 import prisma from '@/config/db';
 import { FileExtractor } from '../../shared/utils/file-extractor';
 import { r2Storage } from '../../infrastructure/storage/r2.storage';
+import crypto from 'crypto';
+import { WhisperProvider } from '../../ai/providers/whisper.provider';
+import { saveVoiceTranscription } from '../voice/voice.repository';
+import { QuerySource } from '@prisma/client';
 
-// ─────────────────────────────────────────────────────────────────────────────
 // RESEARCH
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Utility: Ensure user exists (for auth sync or test scenarios)
 const ensureUserExists = async (userId: string) => {
@@ -66,9 +68,7 @@ export const processResearchQuery = async (userId: string, query: string, model:
   };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // CASE ANALYSIS
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const processCaseAnalysisQuery = async (
   userId: string,
@@ -96,9 +96,7 @@ export const processCaseAnalysisQuery = async (
   };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // COMPLIANCE
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const processComplianceQuery = async (
   userId:          string,
@@ -128,9 +126,7 @@ export const processComplianceQuery = async (
   };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // DRAFTING
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const processDraftingQuery = async (
   userId:        string,
@@ -234,9 +230,7 @@ export const processDraftingEdit = async (userId: string, file: Express.Multer.F
   };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // HISTORY & CONVERSATIONS (unchanged)
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const fetchUserChatHistory = async (userId: string) => {
   // Verify user exists before proceeding
@@ -339,4 +333,49 @@ export const fetchConversationDetails = async (userId: string, conversationId: s
   }
 
   throw new AppError('Conversation not found', 404);
+};
+
+
+// VOICE INPUT (WHISPER STT)
+
+export const processVoiceInput = async (userId: string,  audioBuffer: Buffer, filename: string, mimetype: string) => {
+
+  console.log(`Processing Hindi Voice Input for user ${userId}`);
+  await ensureUserExists(userId);
+
+  // 1. Generate SHA-256 hash of the audio buffer for the redis key
+  const audioHash = crypto.createHash('sha256').update(audioBuffer).digest('hex');
+  const cacheKey = `voice:stt:hi:${audioHash}`;
+
+  // 2. Check Redis cache
+  const cachedTranscription = await redisClient.get(cacheKey);
+  if (cachedTranscription) {
+    // Save record to DB for user history, even if served from cache
+    await saveVoiceTranscription({
+      userId,
+      transcript: cachedTranscription,
+      source: QuerySource.WEB,
+      detectedLang: 'hi'
+    });
+    return { text: cachedTranscription, fromCache: true };
+  }
+
+  // 3. call Whisper provider if not in cache
+  const transcribedText = await WhisperProvider.transcribeHindiAudio(audioBuffer, filename, mimetype);
+
+  // 4. save to Redis Cache for 24 hours to save API costs on retries
+  if (transcribedText) {
+    await redisClient.setex(cacheKey, 86400, transcribedText); 
+    
+    // Save to your actual VoiceTranscription table
+    await saveVoiceTranscription({
+      userId,
+      transcript: transcribedText,
+      source: QuerySource.WEB,
+      detectedLang: 'hi'
+    });
+  }
+
+  return { text: transcribedText, fromCache: false };
+
 };

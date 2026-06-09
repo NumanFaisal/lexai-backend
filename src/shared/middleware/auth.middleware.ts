@@ -11,7 +11,7 @@ declare global {
   }
 }
 
-export const requireAuth = (req: Request, res: Response, next: NextFunction) => {
+export const requireAuth = (req: Request, _res: Response, next: NextFunction) => {
   // 1. Get the token from the "Authorization: Bearer <token>" header
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {

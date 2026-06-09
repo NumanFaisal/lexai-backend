@@ -9,6 +9,7 @@ import {
   fetchUserConversations,
   fetchConversationDetails,
   processDraftingEdit,
+  processVoiceInput,
 } from './chat.service';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -129,3 +130,21 @@ export const getConversation = async (req: Request, res: Response) => {
 
   res.status(200).json({ success: true, data: conversation });
 };
+
+export const handleVoiceInput = async (req: Request, res: Response) => {
+  const userId = req.auth?.userId;
+  if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+  if (!req.file) return res.status(400).json({ success: false, message: 'No audio file uploaded' });
+
+  const result = await processVoiceInput(
+    userId,
+    req.file.buffer,
+    req.file.originalname,
+    req.file.mimetype
+  );
+
+  res.status(200).json({ success: true, data: result })
+
+  
+}

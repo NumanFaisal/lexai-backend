@@ -678,6 +678,8 @@ model UsageLog {
 model VoiceTranscription {
   id              String      @id @default(cuid())
 
+  userId          String
+  
   // Source
   queryId         String?     @unique
   audioUrl        String?     // R2 URL of original audio (retained 7 days)
@@ -804,8 +806,8 @@ model UserCaseFile {
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id], onDelete: Cascade)
 
 
   title       String

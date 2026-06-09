@@ -1,9 +1,10 @@
 // src/ai/pipelines/case-analysis.pipeline.ts
 // ─────────────────────────────────────────────────────────────────────────────
 // LexAI — Case Analysis Pipeline (Production Grade)
-// Uses: LangGraph, RAG (pgvector), Hallucination Guard, Confidence Scoring
-// Flow: validateInput → embedQuery → retrievePrecedents → generateIRAC
-//        → verifyCitations → finalize
+// Uses: LangGraph, RAG (pgvector), Indian Kanoon API, Hallucination Guard,
+//       Confidence Scoring
+// Flow: validateInput → embedQuery → retrievePrecedents → searchKanoonFallback
+//        → generateIRAC → verifyCitations → finalize
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { StateGraph, START, END, Annotation } from '@langchain/langgraph';
@@ -17,6 +18,7 @@ import { logger } from '../../config/logger';
 import { AppError } from '../../shared/errors/AppError';
 import { SupportedModel } from '../../config/llm.config';
 import type { VerifiedCitation, ConfidenceLevel } from '../guards/hallucination.guard';
+import { searchKanoonPrecedents, KanoonSearchResult } from '../../infrastructure/search/kanoon.client';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 1: CONSTANTS
@@ -28,6 +30,10 @@ const PIPELINE_CONSTANTS = {
   LLM_TIMEOUT_MS:       45_000,   // IRAC analysis takes longer than research
   MAX_PRECEDENTS:       3,         // RAG: top N precedents to inject
   MIN_SIMILARITY:       0.4,       // RAG: ignore weak matches below this score
+
+  // Kanoon search fallback
+  KANOON_SEARCH_TIMEOUT_MS:   5_000,   // 5s max for Kanoon search API call
+  KANOON_SEARCH_MAX_RESULTS:  3,       // Max precedents to fetch from Kanoon
 } as const;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -58,7 +64,19 @@ export const CaseAnalysisStateAnnotation = Annotation.Root({
     reducer: (_, next) => next,
     default: () => undefined,
   }),
+  caseId: Annotation<string | undefined>({
+    reducer: (_, next) => next,
+    default: () => undefined,
+  }),
+  caseFacts: Annotation<string | undefined>({
+    reducer: (_, next) => next,
+    default: () => undefined,
+  }),
   precedents: Annotation<PrecedentSearchResult[]>({
+    reducer: (_, next) => next ?? [],
+    default: () => [],
+  }),
+  kanoonPrecedents: Annotation<KanoonSearchResult[]>({
     reducer: (_, next) => next ?? [],
     default: () => [],
   }),
@@ -96,22 +114,26 @@ export const CaseAnalysisStateAnnotation = Annotation.Root({
     startedAt: string;
     llmDurationMs: number;
     ragDurationMs: number;
+    kanoonDurationMs: number;
     guardDurationMs: number;
     totalDurationMs: number;
     inputTokens: number;
     outputTokens: number;
     precedentsFound: number;
+    kanoonPrecedentsFound: number;
   }>({
     reducer: (current, next) => ({ ...current, ...next }),
     default: () => ({
-      startedAt:       new Date().toISOString(),
-      llmDurationMs:   0,
-      ragDurationMs:   0,
-      guardDurationMs: 0,
-      totalDurationMs: 0,
-      inputTokens:     0,
-      outputTokens:    0,
-      precedentsFound: 0,
+      startedAt:             new Date().toISOString(),
+      llmDurationMs:         0,
+      ragDurationMs:         0,
+      kanoonDurationMs:      0,
+      guardDurationMs:       0,
+      totalDurationMs:       0,
+      inputTokens:           0,
+      outputTokens:          0,
+      precedentsFound:       0,
+      kanoonPrecedentsFound: 0,
     }),
   }),
 });
@@ -190,7 +212,40 @@ const embedQueryNode = async (
   }
 };
 
-// Node C: Retrieve Precedents (RAG)
+
+// Node C1: Retrieve Case Facts (from uploaded PDF)
+const retrieveCaseFactsNode = async (
+  state: CaseAnalysisState
+): Promise<Partial<CaseAnalysisState>> => {
+  if (!state.queryEmbedding || !state.caseId) {
+    return { caseFacts: undefined };
+  }
+
+  logger.info({ msg: '[case-analysis.pipeline] Node: retrieveCaseFacts', caseId: state.caseId });
+
+  try {
+    const facts = await VectorStore.searchCaseDocuments(
+      state.caseId,
+      state.queryEmbedding,
+      5,
+      PIPELINE_CONSTANTS.MIN_SIMILARITY
+    );
+
+    const caseFacts = facts.length > 0 
+      ? facts.map(f => f.content).join('\n\n') 
+      : undefined;
+
+    return { caseFacts };
+  } catch (err) {
+    logger.warn({
+      msg: '[case-analysis.pipeline] Case facts search failed',
+      error: (err as Error).message,
+    });
+    return { caseFacts: undefined };
+  }
+};
+
+// Node C2: Retrieve Precedents (RAG)
 const retrievePrecedentsNode = async (
   state: CaseAnalysisState
 ): Promise<Partial<CaseAnalysisState>> => {
@@ -227,19 +282,113 @@ const retrievePrecedentsNode = async (
   }
 };
 
-// Node D: Generate IRAC Analysis
+// Node D: Search Kanoon Fallback
+// If local vector search found fewer than MAX_PRECEDENTS, search Indian Kanoon
+// for additional case law to inject into the IRAC prompt.
+const searchKanoonFallbackNode = async (
+  state: CaseAnalysisState
+): Promise<Partial<CaseAnalysisState>> => {
+  const localCount = state.precedents.length;
+
+  // If local RAG already found enough precedents, skip Kanoon entirely
+  if (localCount >= PIPELINE_CONSTANTS.MAX_PRECEDENTS) {
+    logger.info({
+      msg: '[case-analysis.pipeline] Node: searchKanoonFallback — SKIPPED (enough local precedents)',
+      localPrecedents: localCount,
+    });
+    return { kanoonPrecedents: [] };
+  }
+
+  const kanoonStart = Date.now();
+  const remainingSlots = PIPELINE_CONSTANTS.KANOON_SEARCH_MAX_RESULTS - localCount;
+
+  logger.info({
+    msg: '[case-analysis.pipeline] Node: searchKanoonFallback — searching Kanoon',
+    localPrecedents: localCount,
+    remainingSlots,
+    userId: state.userId,
+  });
+
+  try {
+    // Race the Kanoon search against a timeout to prevent blocking the pipeline
+    const kanoonResults = await Promise.race([
+      searchKanoonPrecedents(state.query, remainingSlots),
+      new Promise<KanoonSearchResult[]>((_, reject) =>
+        setTimeout(() => reject(new Error('Kanoon search timeout')), PIPELINE_CONSTANTS.KANOON_SEARCH_TIMEOUT_MS)
+      ),
+    ]);
+
+    const kanoonDurationMs = Date.now() - kanoonStart;
+
+    logger.info({
+      msg: '[case-analysis.pipeline] Kanoon search complete',
+      resultsFound: kanoonResults.length,
+      durationMs: kanoonDurationMs,
+      titles: kanoonResults.map(r => r.title.slice(0, 60)),
+    });
+
+    return {
+      kanoonPrecedents: kanoonResults,
+      metadata: {
+        ...state.metadata,
+        kanoonDurationMs,
+        kanoonPrecedentsFound: kanoonResults.length,
+      },
+    };
+  } catch (err) {
+    // Kanoon failure is non-fatal — continue without external precedents
+    logger.warn({
+      msg: '[case-analysis.pipeline] Kanoon fallback failed — continuing without external precedents',
+      error: (err as Error).message,
+      durationMs: Date.now() - kanoonStart,
+    });
+    return {
+      kanoonPrecedents: [],
+      metadata: {
+        ...state.metadata,
+        kanoonDurationMs: Date.now() - kanoonStart,
+        kanoonPrecedentsFound: 0,
+      },
+    };
+  }
+};
+
+// Node E: Generate IRAC Analysis
 const generateIRACNode = async (
   state: CaseAnalysisState
 ): Promise<Partial<CaseAnalysisState>> => {
   const llmStart = Date.now();
   logger.info({ msg: '[case-analysis.pipeline] Node: generateIRAC', model: state.selectedModel });
 
-  // Build RAG context string from retrieved precedents
-  const ragContextString = state.precedents.length > 0
-    ? state.precedents.map((p, i) =>
-        `[Precedent ${i + 1}]\nCase: ${p.title}\nSimilarity: ${(p.similarity * 100).toFixed(0)}%\nFacts/Holding: ${p.content.slice(0, 800)}`
-      ).join('\n\n')
-    : 'No relevant precedents retrieved from the database. Rely on your knowledge of Indian case law.';
+  // ── Build RAG context string from BOTH sources ──────────────────────────
+  const ragParts: string[] = [];
+
+  // Case Facts (from uploaded PDF)
+  if (state.caseFacts) {
+    ragParts.push(`[UPLOADED CASE FACTS]\n${state.caseFacts}`);
+  }
+
+  // Local precedents (from pgvector)
+  if (state.precedents.length > 0) {
+    state.precedents.forEach((p, i) => {
+      ragParts.push(
+        `[Local DB — Precedent ${i + 1}]\nCase: ${p.title}\nSimilarity: ${(p.similarity * 100).toFixed(0)}%\nFacts/Holding: ${p.content.slice(0, 800)}`
+      );
+    });
+  }
+
+  // Kanoon precedents (from Indian Kanoon API fallback)
+  if (state.kanoonPrecedents.length > 0) {
+    state.kanoonPrecedents.forEach((k, i) => {
+      ragParts.push(
+        `[Indian Kanoon — Result ${i + 1}]\nCase: ${k.title}\nSource: ${k.kanoonUrl}\nSummary: ${k.snippet.slice(0, 800)}`
+      );
+    });
+  }
+
+  const ragContextString = ragParts.length > 0
+    ? ragParts.join('\n\n')
+    : 'No relevant precedents retrieved from the database or Indian Kanoon. Rely on your knowledge of Indian case law, but follow citation discipline strictly.';
 
   // Inject RAG context into the system prompt
   const systemPromptWithRAG = CASE_ANALYSIS_SYSTEM_PROMPT.replace(
@@ -349,18 +498,19 @@ const verifyCitationsNode = async (
   }
 };
 
-// Node F: Finalize
+// Node G: Finalize
 const finalizeNode = async (
   state: CaseAnalysisState
 ): Promise<Partial<CaseAnalysisState>> => {
   const totalDurationMs = Date.now() - new Date(state.metadata.startedAt).getTime();
 
   logger.info({
-    msg:             '[case-analysis.pipeline] Pipeline complete',
-    userId:          state.userId,
-    confidenceLevel: state.confidenceLevel,
+    msg:                    '[case-analysis.pipeline] Pipeline complete',
+    userId:                 state.userId,
+    confidenceLevel:        state.confidenceLevel,
     totalDurationMs,
-    precedentsUsed:  state.metadata.precedentsFound,
+    localPrecedentsUsed:    state.metadata.precedentsFound,
+    kanoonPrecedentsUsed:   state.metadata.kanoonPrecedentsFound,
   });
 
   return {
@@ -385,20 +535,24 @@ const shouldContinueAfterIRAC = (
 // ─────────────────────────────────────────────────────────────────────────────
 
 const workflow = new StateGraph(CaseAnalysisStateAnnotation)
-  .addNode('validateInput',       validateInputNode)
-  .addNode('embedQuery',          embedQueryNode)
-  .addNode('retrievePrecedents',  retrievePrecedentsNode)
-  .addNode('generateIRAC',        generateIRACNode)
-  .addNode('verifyCitations',     verifyCitationsNode)
-  .addNode('finalize',            finalizeNode)
+  .addNode('validateInput',          validateInputNode)
+  .addNode('embedQuery',             embedQueryNode)
+  .addNode('retrieveCaseFacts',      retrieveCaseFactsNode)
+  .addNode('retrievePrecedents',     retrievePrecedentsNode)
+  .addNode('searchKanoonFallback',   searchKanoonFallbackNode)
+  .addNode('generateIRAC',           generateIRACNode)
+  .addNode('verifyCitations',        verifyCitationsNode)
+  .addNode('finalize',               finalizeNode)
 
   .addEdge(START, 'validateInput')
   .addConditionalEdges('validateInput', shouldContinueAfterValidation, {
     embedQuery: 'embedQuery',
     finalize:   'finalize',
   })
-  .addEdge('embedQuery',         'retrievePrecedents')
-  .addEdge('retrievePrecedents', 'generateIRAC')
+  .addEdge('embedQuery',            'retrieveCaseFacts')
+  .addEdge('retrieveCaseFacts',     'retrievePrecedents')
+  .addEdge('retrievePrecedents',    'searchKanoonFallback')
+  .addEdge('searchKanoonFallback',  'generateIRAC')
   .addConditionalEdges('generateIRAC', shouldContinueAfterIRAC, {
     verifyCitations: 'verifyCitations',
     finalize:        'finalize',
@@ -415,6 +569,7 @@ export const caseAnalysisPipeline = workflow.compile();
 export interface RunCaseAnalysisOptions {
   query:               string;
   userId:              string;
+  caseId?:             string;
   selectedModel?:      SupportedModel;
   conversationHistory?: BaseMessage[];
 }
@@ -443,6 +598,7 @@ export async function runCaseAnalysisPipeline(
   const {
     query,
     userId,
+    caseId,
     selectedModel       = 'gpt-4o',
     conversationHistory = [],
   } = options;
@@ -450,6 +606,7 @@ export async function runCaseAnalysisPipeline(
   const result = await caseAnalysisPipeline.invoke({
     query,
     userId,
+    caseId,
     selectedModel,
     conversationHistory,
   });
@@ -463,12 +620,20 @@ export async function runCaseAnalysisPipeline(
     throw new AppError('Case analysis pipeline produced no response. Please try again.', 500);
   }
 
+  const totalPrecedents = (result.metadata.precedentsFound ?? 0) + (result.metadata.kanoonPrecedentsFound ?? 0);
+
   return {
     finalResponse:     result.finalResponse,
-    citationsVerified: result.citationsVerified ?? [],
+    citationsVerified: (result.citationsVerified ?? []).map((c: any) => ({
+      ...c,
+      verified: c.status === 'VERIFIED',
+    })),
     confidenceScore:   result.confidenceScore   ?? 1.0,
     confidenceLevel:   result.confidenceLevel   ?? 'HIGH',
-    precedentsFound:   result.metadata.precedentsFound ?? 0,
-    metadata:          result.metadata,
+    precedentsFound:   totalPrecedents,
+    metadata: {
+      ...result.metadata,
+      precedentsFound: totalPrecedents,
+    },
   };
 }

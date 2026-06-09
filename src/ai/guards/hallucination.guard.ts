@@ -150,7 +150,7 @@ interface ActMetadata {
 // Matches: "Section 138 of the Negotiable Instruments Act"
 //          "Sec. 406 IPC" / "§ 420 IPC" / "S. 302 IPC"
 const SECTION_PATTERN =
-  /(?:Section|Sec\.|§|S\.)\s*(\d{1,4}[A-Z]?(?:\([a-z0-9]+\))?)\s+(?:of\s+)?(?:the\s+)?([A-Z][A-Za-z\s,&]+?(?:Act|Code|Rules?|Ordinance|Sanhita|Adhiniyam)\s*(?:\d{4})?)/gi;
+  /(?:Section|Sec\.|§|S\.)\s*(\d{1,4}[A-Z]?(?:\([a-z0-9]+\))?)\s+(?:of\s+)?(?:the\s+)?([A-Z][A-Za-z\s,&.]*?(?:Act|Code|Rules?|Ordinance|Sanhita|Adhiniyam|B\.?N\.?S\.?|I\.?P\.?C\.?|Cr\.?P\.?C\.?|B\.?N\.?S\.?S\.?|B\.?S\.?A\.?|I\.?E\.?A\.?|I\.?C\.?A\.?|N\.?I\.?\s*Act|C\.?P\.?C\.?)\s*(?:\d{4})?)/gi;
 
 // Matches: "Article 21 of the Constitution"
 const ARTICLE_PATTERN =

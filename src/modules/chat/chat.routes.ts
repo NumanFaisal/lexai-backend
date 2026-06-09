@@ -1,5 +1,5 @@
 // src/modules/chat/chat.routes.ts
-import { Router } from 'express';
+import { Router, Request, Response } from 'express';
 import express from 'express';
 import {
   getChatHistory,
@@ -9,6 +9,8 @@ import {
   handleDraftingChat,
   getConversations,
   getConversation,
+  handleDraftingEdit,
+  handleVoiceInput,
 } from './chat.controller';
 import { requireAuth } from '../../shared/middleware/auth.middleware';
 import { asyncHandler } from '../../shared/utils/async.wrapper';
@@ -24,9 +26,8 @@ import { aiRateLimiter } from '@/shared/middleware/rate-limit.middleware';
 
 const router = Router();
 
-// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/v1/chat/research
-// ─────────────────────────────────────────────────────────────────────────────
+
 router.post(
   '/research',
   express.json(),
@@ -36,9 +37,8 @@ router.post(
   asyncHandler(handleResearchChat)
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/v1/chat/case-analysis
-// ─────────────────────────────────────────────────────────────────────────────
+
 router.post(
   '/case-analysis',
   express.json(),
@@ -48,9 +48,8 @@ router.post(
   asyncHandler(handleCaseAnalysisChat)
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
 // POST /api/v1/chat/compliance
-// ─────────────────────────────────────────────────────────────────────────────
+
 router.post(
   '/compliance',
   express.json(),
@@ -60,13 +59,12 @@ router.post(
   asyncHandler(handleComplianceChat)
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
 // DRAFTING
-// ─────────────────────────────────────────────────────────────────────────────
+
 
 const upload = multer({
   limits: { fileSize: 15 * 1024 * 1024 }, // 15MB
-  fileFilter: (req, file, cb) => {
+  fileFilter: (_req, file, cb) => {
     const allowed = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
     if (allowed.includes(file.mimetype)) {
       cb(null, true);
@@ -81,8 +79,7 @@ router.post(
   requireAuth,
   aiRateLimiter,
   upload.single('file'),
-  asyncHandler(async (req, res) => {
-    const { handleDraftingEdit } = await import('./chat.controller');
+  asyncHandler(async (req: Request, res: Response) => {
     return handleDraftingEdit(req, res);
   })
 );
@@ -95,9 +92,8 @@ router.post(
   asyncHandler(handleDraftingChat)
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/v1/chat/history
-// ─────────────────────────────────────────────────────────────────────────────
+
 router.get(
   '/history',
   requireAuth,
@@ -105,22 +101,49 @@ router.get(
   asyncHandler(getChatHistory)
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/v1/chat/conversations
-// ─────────────────────────────────────────────────────────────────────────────
+
 router.get(
   '/conversations',
   requireAuth,
   asyncHandler(getConversations)
 );
 
-// ─────────────────────────────────────────────────────────────────────────────
 // GET /api/v1/chat/conversations/:id
-// ─────────────────────────────────────────────────────────────────────────────
+
 router.get(
   '/conversations/:id',
   requireAuth,
   asyncHandler(getConversation)
 );
+
+
+// VOICE INPUT
+
+const uploadAudio = multer({
+  limits: { fileSize: 25 * 1024 * 1024 }, // 25Mb
+  fileFilter: (_req, file, cb) => {
+    // Browsers generate webm, ogg, or mp4 for audio via MediaRecorder API
+    const allowedMimeTypes = [
+      'audio/webm', 'audio/ogg', 'audio/mp4', 'audio/mp3', 
+      'audio/mpeg', 'audio/wav', 'audio/x-m4a', 'video/webm' // Safari sometimes sends video/webm for audio
+    ];
+    if (allowedMimeTypes.includes(file.mimetype) || file.mimetype.startsWith('audio/')) {
+      cb(null, true);
+    } else {
+      cb(new Error(`Unsupported audio type: ${file.mimetype}`));
+    }
+  }
+});
+
+router.post(
+  '/voice-input',
+  requireAuth,
+  aiRateLimiter,
+  uploadAudio.single('audio'),
+  asyncHandler(handleVoiceInput)
+
+)
+
 
 export default router;

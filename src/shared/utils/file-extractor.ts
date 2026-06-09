@@ -1,4 +1,3 @@
-const pdfParse = require('pdf-parse');
 import mammoth from 'mammoth';
 import { ChatGoogleGenerativeAI } from "@langchain/google-genai";
 import { HumanMessage } from "@langchain/core/messages";
@@ -10,8 +9,14 @@ export class FileExtractor {
     
     // 1. PDF
     if (mimetype === 'application/pdf') {
-      const data = await pdfParse(buffer);
-      return data.text;
+      const { PDFParse } = require('pdf-parse');
+      const parser = new PDFParse({ data: buffer });
+      try {
+        const result = await parser.getText();
+        return result.text;
+      } finally {
+        await parser.destroy();
+      }
     }
     
     // 2. DOCX

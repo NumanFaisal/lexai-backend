@@ -16,12 +16,10 @@ interface Document {
 
 export class RecursiveCharacterTextSplitter {
   private chunkSize: number;
-  private chunkOverlap: number;
   private separators: string[];
 
   constructor(options: TextSplitterOptions) {
     this.chunkSize = options.chunkSize;
-    this.chunkOverlap = options.chunkOverlap;
     this.separators = options.separators || [
       "\n\n",
       "\n",
@@ -45,54 +43,55 @@ export class RecursiveCharacterTextSplitter {
     return documents;
   }
 
-  private splitText(text: string): string[] {
+  private splitText(text: string, separatorIndex: number = 0): string[] {
+    if (text.length < this.chunkSize) {
+      return [text];
+    }
+    if (separatorIndex >= this.separators.length) {
+      // If we exhausted all separators and it's still too big, chunk it by characters hard!
+      const chunks: string[] = [];
+      for (let i = 0; i < text.length; i += this.chunkSize) {
+        chunks.push(text.substring(i, i + this.chunkSize));
+      }
+      return chunks;
+    }
+
     const finalChunks: string[] = [];
-    let goodSeparators: string[] = ["\n\n", "\n", " ", ""];
-    let separatorIndex = 0;
+    const separator = this.separators[separatorIndex];
+    let splits: string[] = [];
 
-    while (separatorIndex < this.separators.length) {
-      const separator = this.separators[separatorIndex];
-      let splits: string[] = [];
+    if (separator) {
+      splits = text.split(separator);
+    } else {
+      splits = text.split("");
+    }
 
-      if (separator) {
-        splits = text.split(separator);
+    let goodChunks: string[] = [];
+    for (const s of splits) {
+      if (s.length < this.chunkSize) {
+        goodChunks.push(s);
       } else {
-        splits = text.split("");
-      }
-
-      let goodChunks: string[] = [];
-      for (const s of splits) {
-        if (s.length < this.chunkSize) {
-          goodChunks.push(s);
-        } else {
-          if (goodChunks.length > 0) {
-            const mergedText = this.mergeSplits(goodChunks, separator);
-            finalChunks.push(...mergedText);
-            goodChunks = [];
-          }
-
-          const otherInfo = this.splitText(s);
-          finalChunks.push(...otherInfo);
+        if (goodChunks.length > 0) {
+          const mergedText = this.mergeSplits(goodChunks, separator);
+          finalChunks.push(...mergedText);
+          goodChunks = [];
         }
-      }
 
-      if (goodChunks.length > 0) {
-        const mergedText = this.mergeSplits(goodChunks, separator);
-        finalChunks.push(...mergedText);
+        // Recurse with the NEXT separator index to split the oversized chunk
+        const otherInfo = this.splitText(s, separatorIndex + 1);
+        finalChunks.push(...otherInfo);
       }
+    }
 
-      if (finalChunks.length > 0) {
-        break;
-      }
-
-      separatorIndex += 1;
+    if (goodChunks.length > 0) {
+      const mergedText = this.mergeSplits(goodChunks, separator);
+      finalChunks.push(...mergedText);
     }
 
     return finalChunks.filter(chunk => chunk.trim().length > 0);
   }
 
   private mergeSplits(splits: string[], separator: string): string[] {
-    const separatorLen = separator.length;
     let goodSplits: string[] = [];
 
     for (const s of splits) {
