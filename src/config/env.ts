@@ -31,7 +31,10 @@ const envSchema = z.object({
   R2_SECRET_ACCESS_KEY: z.string(),
   R2_BUCKET_NAME: z.string(),
 
-  
+  // Twilio Configuration
+  TWILIO_ACCOUNT_SID: z.string(),
+  TWILIO_AUTH_TOKEN: z.string(),
+
   // Add other keys here as you need them (Razorpay, Twilio, etc.)
 });
 

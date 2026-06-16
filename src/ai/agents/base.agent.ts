@@ -194,6 +194,11 @@ export abstract class BaseAgent {
     else if (confidenceScore < 0.8)  confidenceLevel = ConfidenceLevel.MEDIUM;
 
     try {
+      // Do not attempt to save queries for unregistered WhatsApp users to avoid FK constraints
+      if (userId.startsWith('wa_unregistered')) {
+        return { id: 'skipped-unregistered' };
+      }
+
       const record = await prisma.query.create({
         data: {
           userId,

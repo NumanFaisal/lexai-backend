@@ -1,8 +1,7 @@
-// ═══════════════════════════════════════════════════════════════════════
+
 // LexAi — Complete Prisma Schema
 // Every model needed for: Auth, Chat, Documents, Compliance,
 // Payments, WhatsApp, Admin, AI Agents
-// ═══════════════════════════════════════════════════════════════════════
 
 generator client {
   provider = "prisma-client-js"
@@ -14,9 +13,9 @@ datasource db {
   // directUrl = env("DIRECT_URL")         // Direct connection (migrations only)
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
 // ENUMS
-// ═══════════════════════════════════════════════════════════════════════
+
 
 enum Persona {
   ADVOCATE
@@ -142,10 +141,10 @@ enum AdminActionType {
   SYSTEM_CONFIG_CHANGED
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
 // MODEL 1: USER
 // Central user model. Linked to Clerk for auth.
-// ═══════════════════════════════════════════════════════════════════════
+
 
 model User {
   id                String    @id @default(cuid())
@@ -200,11 +199,11 @@ model User {
   @@map("users")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
 // MODEL 2: CONVERSATION
 // Groups multiple queries into one chat session.
 // Like a ChatGPT conversation thread.
-// ═══════════════════════════════════════════════════════════════════════
+
 
 model Conversation {
   id          String    @id @default(cuid())
@@ -230,11 +229,11 @@ model Conversation {
   @@map("conversations")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
 // MODEL 3: QUERY
 // Every single AI interaction. The core data model.
 // Never delete. Append only.
-// ═══════════════════════════════════════════════════════════════════════
+
 
 model Query {
   id              String    @id @default(cuid())
@@ -286,11 +285,11 @@ model Query {
   @@map("queries")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
 // MODEL 4: CITATION
 // Individual citations extracted from AI responses.
 // Verified against Indian Kanoon API.
-// ═══════════════════════════════════════════════════════════════════════
+
 
 model Citation {
   id          String        @id @default(cuid())
@@ -317,11 +316,12 @@ model Citation {
   @@map("citations")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
+
 // MODEL 5: DOCUMENT
 // AI-generated legal documents saved by users.
 // Supports versioning.
-// ═══════════════════════════════════════════════════════════════════════
+// 
 
 model Document {
   id            String          @id @default(cuid())
@@ -372,10 +372,8 @@ model Document {
   @@map("documents")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
 // MODEL 6: DOCUMENT VERSION
 // Tracks every save of a document. Allows rollback.
-// ═══════════════════════════════════════════════════════════════════════
 
 model DocumentVersion {
   id          String    @id @default(cuid())
@@ -391,10 +389,10 @@ model DocumentVersion {
   @@map("document_versions")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
 // MODEL 7: COMPLIANCE REPORT
 // Full compliance check result for a business.
-// ═══════════════════════════════════════════════════════════════════════
+
 
 model ComplianceReport {
   id              String    @id @default(cuid())
@@ -429,10 +427,10 @@ model ComplianceReport {
   @@map("compliance_reports")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
 // MODEL 8: COMPLIANCE ITEM
 // Individual checklist item within a compliance report.
-// ═══════════════════════════════════════════════════════════════════════
+
 
 model ComplianceItem {
   id          String              @id @default(cuid())
@@ -465,10 +463,10 @@ model ComplianceItem {
   @@map("compliance_items")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
 // MODEL 9: SUBSCRIPTION
 // Razorpay subscription for a user.
-// ═══════════════════════════════════════════════════════════════════════
+
 
 model Subscription {
   id                  String              @id @default(cuid())
@@ -503,11 +501,11 @@ model Subscription {
   @@map("subscriptions")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
 // MODEL 10: PAYMENT EVENT
 // Immutable log of every Razorpay webhook event.
 // Never update or delete — append only for audit trail.
-// ═══════════════════════════════════════════════════════════════════════
+
 
 model PaymentEvent {
   id                String            @id @default(cuid())
@@ -540,11 +538,11 @@ model PaymentEvent {
   @@map("payment_events")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
 // MODEL 11: WHATSAPP SESSION
 // State for each WhatsApp user (registered or not).
 // Stores conversation context so Claude remembers previous messages.
-// ═══════════════════════════════════════════════════════════════════════
+
 
 model WhatsappSession {
   id                String                @id @default(cuid())
@@ -579,11 +577,11 @@ model WhatsappSession {
   @@map("whatsapp_sessions")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
 // MODEL 12: AGENT RUN
 // Logs every AI agent execution. Useful for debugging,
 // performance monitoring, and cost tracking.
-// ═══════════════════════════════════════════════════════════════════════
+
 
 model AgentRun {
   id              String          @id @default(cuid())
@@ -626,11 +624,10 @@ model AgentRun {
   @@map("agent_runs")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
 // MODEL 13: USAGE LOG
 // Daily snapshot of each user's usage.
 // Used for admin analytics and billing audit.
-// ═══════════════════════════════════════════════════════════════════════
 
 model UsageLog {
   id              String    @id @default(cuid())
@@ -670,10 +667,8 @@ model UsageLog {
   @@map("usage_logs")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
 // MODEL 14: VOICE TRANSCRIPTION
 // Stores Whisper STT results for audit and debugging.
-// ═══════════════════════════════════════════════════════════════════════
 
 model VoiceTranscription {
   id              String      @id @default(cuid())
@@ -701,10 +696,9 @@ model VoiceTranscription {
   @@map("voice_transcriptions")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
 // MODEL 15: ADMIN LOG
 // Immutable audit trail of all admin actions.
-// ═══════════════════════════════════════════════════════════════════════
 
 model AdminLog {
   id            String          @id @default(cuid())
@@ -734,11 +728,9 @@ model AdminLog {
   @@map("admin_logs")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
 // MODEL 16: SYSTEM CONFIG
 // Key-value store for runtime configuration.
 // Change settings without redeploying.
-// ═══════════════════════════════════════════════════════════════════════
 
 model SystemConfig {
   id          String    @id @default(cuid())
@@ -752,10 +744,8 @@ model SystemConfig {
   @@map("system_config")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
 // MODEL 17: WAITLIST
 // Email / phone capture for people who sign up before launch.
-// ═══════════════════════════════════════════════════════════════════════
 
 model Waitlist {
   id          String    @id @default(cuid())
@@ -774,10 +764,10 @@ model Waitlist {
 }
 
 
-// ═══════════════════════════════════════════════════════════════════════
+
 // MODEL 18: PRECEDENT (VECTOR STORE)
 // Stores Indian case law and precedents for semantic similarity search.
-// ═══════════════════════════════════════════════════════════════════════
+
 
 model Precedent {
   id          String   @id @default(cuid())
@@ -796,10 +786,10 @@ model Precedent {
   @@map("precedents")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
+
 // MODEL 19: USER CASE FILE
 // Stores user-uploaded case files (PDF, Image, Audio, DOCX)
-// ═══════════════════════════════════════════════════════════════════════
+
 
 model UserCaseFile {
   id          String   @id @default(cuid())
@@ -823,10 +813,9 @@ model UserCaseFile {
   @@map("user_case_files")
 }
 
-// ═══════════════════════════════════════════════════════════════════════
 // MODEL 20: USER CASE CHUNK
 // Stores vector chunks for a specific user case file
-// ═══════════════════════════════════════════════════════════════════════
+
 
 model UserCaseChunk {
   id          String   @id @default(cuid())

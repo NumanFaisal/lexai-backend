@@ -19,6 +19,8 @@ import complianceRoutes from '../modules/compliance/compliance.routes';
 import caseAnalysisRoutes from '../modules/case-analysis/case-analysis.routes';
 import voiceRoutes from '../modules/voice/voice.routes';
 
+import whatsappRoutes from '../modules/whatsapp/whatsapp.routes';
+
 const app = express();
 
 /*
@@ -82,6 +84,7 @@ app.use('/api/v1/documents', documentsRoutes);
 app.use('/api/v1/compliance', complianceRoutes);
 app.use('/api/v1/case-analysis', caseAnalysisRoutes);
 app.use('/api/v1/voice', voiceRoutes);
+app.use('/api/v1/whatsapp', whatsappRoutes);
 
 /*
 |--------------------------------------------------------------------------

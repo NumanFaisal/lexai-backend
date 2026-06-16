@@ -111,7 +111,7 @@ export const ResearchStateAnnotation = Annotation.Root({
   }),
   selectedModel: Annotation<SupportedModel>({
     reducer: (_, next) => next,
-    default: () => "gemini-2.0-flash",   // Default to cheapest capable model
+    default: () => "gpt-4o",   // Default to cheapest capable model
   }),
   userId: Annotation<string>({
     reducer: (_, next) => next,
