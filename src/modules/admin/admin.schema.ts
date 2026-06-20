@@ -1,6 +1,8 @@
 // src/modules/admin/admin.schema.ts
 import { z } from 'zod';
-import { Plan, Persona, QueryMode, QuerySource, AgentRunStatus } from '@prisma/client';
+import { Plan, Persona, QuerySource, AgentRunStatus } from '@prisma/client';
+
+const queryModes = ['RESEARCH', 'DRAFT', 'COMPLIANCE', 'CASE_ANALYSIS'] as const;
 
 const pagination = {
   page: z.string().optional().transform(v => parseInt(v || '1', 10)),
@@ -38,7 +40,7 @@ export const adminActionUserSchema = z.object({
 export const browseQueriesSchema = z.object({
   query: z.object({
     ...pagination,
-    mode: z.nativeEnum(QueryMode).optional(),
+    mode: z.enum(queryModes).optional(),
     source: z.nativeEnum(QuerySource).optional(),
     flagged: z.string().optional().transform(v => v === 'true'),
   }),
@@ -48,7 +50,7 @@ export const getAgentRunsSchema = z.object({
   query: z.object({
     ...pagination,
     status: z.nativeEnum(AgentRunStatus).optional(),
-    agentType: z.nativeEnum(QueryMode).optional(),
+    agentType: z.enum(queryModes).optional(),
   }),
 });
 
