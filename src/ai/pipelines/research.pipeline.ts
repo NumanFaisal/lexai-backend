@@ -13,6 +13,7 @@ import { verifyWithKanoon } from "../../infrastructure/search/kanoon.client";
 import { logger } from "../../config/logger";
 import { AppError } from "../../shared/errors/AppError";
 import { SupportedModel } from "@/config/llm.config";
+import { InputGuard } from "../guards/input.guard";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // SECTION 1: CONSTANTS
@@ -265,6 +266,23 @@ const validateInputNode = async (
         retryable: false,
       },
     };
+  }
+
+  // Run Input Guard Validation
+  try {
+    InputGuard.validate(query);
+  } catch (err) {
+    if (err instanceof AppError) {
+      return {
+        error: {
+          code: "INPUT_GUARD_BLOCKED",
+          message: err.message,
+          nodeWhere: "validateInput",
+          retryable: false,
+        },
+      };
+    }
+    throw err;
   }
 
   // Rule 2: Query must not be too short to be meaningful

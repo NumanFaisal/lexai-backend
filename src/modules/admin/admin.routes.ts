@@ -1,16 +1,16 @@
 // src/modules/admin/admin.routes.ts
 import { Router } from 'express';
 import express from 'express';
-import { requireAuth } from '../../shared/middleware/auth.middleware';
 import { validate } from '../../shared/middleware/validate.middleware';
 import { asyncHandler } from '../../shared/utils/async.wrapper';
 import * as schema from './admin.schema';
 import * as ctrl from './admin.controller';
+import { requireAdmin } from '../../shared/middleware/admin.middleware';
 
 const router = Router();
 
 router.use(express.json());
-router.use(requireAuth);
+router.use(requireAdmin);
 
 // 1. Dashboard Stats
 router.get('/stats', asyncHandler(ctrl.getDashboardStats));

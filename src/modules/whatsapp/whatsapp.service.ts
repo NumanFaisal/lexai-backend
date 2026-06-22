@@ -5,6 +5,7 @@ import { logger } from '../../config/logger';
 import { WhatsappRepository } from './whatsapp.repository';
 import { researchAgent } from '../../ai/agents/research/research.agent';
 import { HumanMessage, AIMessage, BaseMessage } from '@langchain/core/messages';
+import { WhatsAppFormatter } from '../../shared/utils/whatsapp.format'
 
 // Initialize Twilio Client
 const twilioClient = new Twilio(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
@@ -52,7 +53,8 @@ export class WhatsappService {
       });
 
       // 4. Send the response back via Twilio
-      await this.sendWhatsAppMessage(toPhone, payload.From, result.response);
+      const formattedResponse = WhatsAppFormatter.formatForWhatsApp(result.response);
+      await this.sendWhatsAppMessage(toPhone, payload.From, formattedResponse);
 
       // 5. Update Context (Keep last 6 messages)
       rawContext.push({ role: 'user', content: incomingText });

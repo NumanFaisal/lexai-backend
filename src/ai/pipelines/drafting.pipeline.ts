@@ -29,6 +29,7 @@ import { getLLM, SupportedModel } from "../providers/llm.factory";
 import { DocumentType } from "@prisma/client";
 import { logger } from "../../config/logger";
 import { AppError } from "../../shared/errors/AppError";
+import { InputGuard } from "../guards/input.guard";
 import {
   DRAFT_INTENT_PROMPT,
   DRAFT_DETAILS_EXTRACTION_PROMPT,
@@ -421,6 +422,23 @@ const validateInputNode = async (
         retryable: false,
       },
     };
+  }
+
+  // Run Input Guard Validation
+  try {
+    InputGuard.validate(query);
+  } catch (err) {
+    if (err instanceof AppError) {
+      return {
+        error: {
+          code:      "INPUT_GUARD_BLOCKED",
+          message:   err.message,
+          nodeWhere: "validateInput",
+          retryable: false,
+        },
+      };
+    }
+    throw err;
   }
 
   if (query.length > PIPELINE_CONFIG.MAX_QUERY_LENGTH) {

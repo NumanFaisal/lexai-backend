@@ -17,6 +17,7 @@ import { CASE_ANALYSIS_SYSTEM_PROMPT } from '../prompts/shared/base.prompt';
 import { logger } from '../../config/logger';
 import { AppError } from '../../shared/errors/AppError';
 import { SupportedModel } from '../../config/llm.config';
+import { InputGuard } from '../guards/input.guard';
 import type { VerifiedCitation, ConfidenceLevel } from '../guards/hallucination.guard';
 import { searchKanoonPrecedents, KanoonSearchResult } from '../../infrastructure/search/kanoon.client';
 
@@ -178,6 +179,22 @@ const validateInputNode = async (
   const query = state.query?.trim();
   if (!query || query.length === 0) {
     return { error: { code: 'EMPTY_QUERY', message: 'Please describe the case or legal issue.', retryable: false } };
+  }
+
+  // Run Input Guard Validation
+  try {
+    InputGuard.validate(query);
+  } catch (err) {
+    if (err instanceof AppError) {
+      return {
+        error: {
+          code: 'INPUT_GUARD_BLOCKED',
+          message: err.message,
+          retryable: false,
+        },
+      };
+    }
+    throw err;
   }
   if (query.length < 10) {
     return { error: { code: 'QUERY_TOO_SHORT', message: 'Please provide more details about the case.', retryable: false } };

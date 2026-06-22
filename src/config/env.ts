@@ -8,6 +8,7 @@ const envSchema = z.object({
   NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
   PORT: z.string().default('4000'),
   DATABASE_URL: z.string(),
+  ADMIN_EMAILS: z.string().optional(),
   // DIRECT_URL: z.string(),
   // FRONTEND_URL: z.string().url(),
 

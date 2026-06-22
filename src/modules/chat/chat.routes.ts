@@ -23,6 +23,7 @@ import {
   draftingChatSchema,
 } from './chat.schema';
 import { aiRateLimiter } from '@/shared/middleware/rate-limit.middleware';
+import { enforceQueryLimit } from '@/shared/middleware/query-limit.middleware';
 
 const router = Router();
 
@@ -32,6 +33,7 @@ router.post(
   '/research',
   express.json(),
   requireAuth,
+  enforceQueryLimit,
   aiRateLimiter,
   validate(researchChatSchema),
   asyncHandler(handleResearchChat)
@@ -43,6 +45,7 @@ router.post(
   '/case-analysis',
   express.json(),
   requireAuth,
+  enforceQueryLimit,
   aiRateLimiter,
   validate(caseAnalysisChatSchema),
   asyncHandler(handleCaseAnalysisChat)
@@ -54,6 +57,7 @@ router.post(
   '/compliance',
   express.json(),
   requireAuth,
+  enforceQueryLimit,
   aiRateLimiter,
   validate(complianceChatSchema),
   asyncHandler(handleComplianceChat)
@@ -77,6 +81,7 @@ const upload = multer({
 router.post(
   '/drafting/edit',
   requireAuth,
+  enforceQueryLimit,
   aiRateLimiter,
   upload.single('file'),
   asyncHandler(async (req: Request, res: Response) => {
@@ -87,6 +92,7 @@ router.post(
   '/drafting',
   express.json(),
   requireAuth,
+  enforceQueryLimit,
   aiRateLimiter,
   validate(draftingChatSchema),
   asyncHandler(handleDraftingChat)
@@ -97,6 +103,7 @@ router.post(
 router.get(
   '/history',
   requireAuth,
+  enforceQueryLimit,
   aiRateLimiter,
   asyncHandler(getChatHistory)
 );
@@ -106,6 +113,7 @@ router.get(
 router.get(
   '/conversations',
   requireAuth,
+  enforceQueryLimit,
   asyncHandler(getConversations)
 );
 
@@ -114,6 +122,7 @@ router.get(
 router.get(
   '/conversations/:id',
   requireAuth,
+  enforceQueryLimit,
   asyncHandler(getConversation)
 );
 
@@ -139,6 +148,7 @@ const uploadAudio = multer({
 router.post(
   '/voice-input',
   requireAuth,
+  enforceQueryLimit,
   aiRateLimiter,
   uploadAudio.single('audio'),
   asyncHandler(handleVoiceInput)
