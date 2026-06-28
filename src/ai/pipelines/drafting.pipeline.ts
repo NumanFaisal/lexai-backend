@@ -1,6 +1,6 @@
 // src/ai/pipelines/drafting.pipeline.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// LexAI — Contract Drafting Pipeline (Production Grade)
+
+// LexAI — Contract Drafting Pipeline 
 //
 // FLOW:
 //   validateInput → analyzeIntent → [clarify | extractDetails → generateDocument
@@ -21,7 +21,6 @@
 //   After validateCompliance:
 //     - Compliance issues found  → retry generateDocument (max 1 retry)
 //     - All good                 → finalize
-// ─────────────────────────────────────────────────────────────────────────────
 
 import { StateGraph, START, END, Annotation } from "@langchain/langgraph";
 import { BaseMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
@@ -39,9 +38,8 @@ import {
 } from "../prompts/drafting";
 import { reviewAgent } from "../agents/drafting/review.agent";
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 1: CONSTANTS
-// ─────────────────────────────────────────────────────────────────────────────
 
 const PIPELINE_CONFIG = {
   // LLM settings per node
@@ -70,11 +68,10 @@ const PIPELINE_CONFIG = {
   MIN_QUERY_LENGTH:        10,
 } as const;
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 2: DOCUMENT TYPE MAP
 // Maps keywords → DocumentType enum values from Prisma schema.
 // Used by the intent analysis node to classify what document to draft.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const DOCUMENT_TYPE_KEYWORDS: Array<{
   type:     DocumentType;
@@ -153,9 +150,8 @@ const DOCUMENT_TYPE_KEYWORDS: Array<{
   },
 ];
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 3: TYPES
-// ─────────────────────────────────────────────────────────────────────────────
 
 export interface DraftingInput {
   documentType:  string;
@@ -215,9 +211,7 @@ export interface PipelineError {
   retryable:   boolean;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SECTION 4: STATE DEFINITION
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const DraftingStateAnnotation = Annotation.Root({
 
@@ -239,7 +233,7 @@ export const DraftingStateAnnotation = Annotation.Root({
     default:  () => "",
   }),
 
-  // ── INTENT ANALYSIS OUTPUTS ─────────────────────────────────────────────
+  //  INTENT ANALYSIS OUTPUTS
   isReadyToDraft: Annotation<boolean>({
     reducer:  (_, next) => next,
     default:  () => false,
@@ -257,13 +251,13 @@ export const DraftingStateAnnotation = Annotation.Root({
     default:  () => "OTHER",
   }),
 
-  // ── EXTRACTION OUTPUTS ───────────────────────────────────────────────────
+  // EXTRACTION OUTPUTS
   documentDetails: Annotation<ExtractedDocumentDetails | undefined>({
     reducer:  (_, next) => next,
     default:  () => undefined,
   }),
 
-  // ── GENERATION OUTPUTS ───────────────────────────────────────────────────
+  // GENERATION OUTPUTS 
   draftedContent: Annotation<string | undefined>({
     reducer:  (_, next) => next,
     default:  () => undefined,
@@ -273,7 +267,7 @@ export const DraftingStateAnnotation = Annotation.Root({
     default:  () => undefined,
   }),
 
-  // ── COMPLIANCE OUTPUTS ───────────────────────────────────────────────────
+  // COMPLIANCE OUTPUTS 
   complianceIssues: Annotation<ComplianceIssue[]>({
     reducer:  (_, next) => next ?? [],
     default:  () => [],
@@ -287,7 +281,7 @@ export const DraftingStateAnnotation = Annotation.Root({
     default:  () => 0,
   }),
 
-  // ── PIPELINE CONTROL ─────────────────────────────────────────────────────
+  // PIPELINE CONTROL 
   error: Annotation<PipelineError | undefined>({
     reducer:  (_, next) => next,
     default:  () => undefined,
@@ -310,9 +304,8 @@ export const DraftingStateAnnotation = Annotation.Root({
 
 export type DraftingState = typeof DraftingStateAnnotation.State;
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 5: SHARED HELPERS
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Retries a function with exponential backoff
 async function withRetry<T>(
@@ -402,9 +395,8 @@ function safeParseJSON<T>(raw: string): T | null {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 6: NODE 1 — Validate Input
-// ─────────────────────────────────────────────────────────────────────────────
 
 const validateInputNode = async (
   state: DraftingState
@@ -459,7 +451,7 @@ const validateInputNode = async (
   return { detectedDocumentType: type };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 7: NODE 2 — Analyze Intent
 //
 // Asks the LLM: "Do we have enough information to draft this document?"
@@ -467,7 +459,6 @@ const validateInputNode = async (
 //
 // The LLM is instructed to respond in a structured JSON format so we can
 // parse the result deterministically instead of fragile string matching.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const analyzeIntentNode = async (
   state: DraftingState
@@ -509,7 +500,7 @@ const analyzeIntentNode = async (
 
     const text = response.content.toString().trim();
 
-    // ── Parse structured JSON response ──────────────────────────────────
+    //  Parse structured JSON response
     // Expected format:
     // { "status": "READY" | "CLARIFY", "question": "..." | null }
     const parsed = safeParseJSON<{ status: string; question?: string }>(text);
@@ -590,12 +581,11 @@ function getRequiredFieldsForType(type: DocumentType): string {
   return REQUIRED[type] ?? REQUIRED.OTHER;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 8: NODE 3 — Extract Details
 //
 // Extracts structured data from the conversation to populate the document.
 // Returns a typed ExtractedDocumentDetails object used by the generation node.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const extractDetailsNode = async (
   state: DraftingState
@@ -738,12 +728,11 @@ function getDefaultGoverningLaw(type: DocumentType): string {
   return DEFAULTS[type] ?? "Indian Contract Act, 1872";
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 9: NODE 4 — Generate Document
 //
 // The main drafting node. Uses high token limit (4000) and slightly higher
 // temperature (0.3) for natural, varied legal language.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const generateDocumentNode = async (
   state: DraftingState
@@ -817,10 +806,10 @@ const generateDocumentNode = async (
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // NODE: Review Draft
 // Refines and enhances the generated document using reviewAgent.
-// ─────────────────────────────────────────────────────────────────────────────
+
 const reviewDraftNode = async (
   state: DraftingState
 ): Promise<Partial<DraftingState>> => {
@@ -862,13 +851,12 @@ const reviewDraftNode = async (
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 10: NODE 5 — Validate Compliance
 //
 // Checks the generated document for India-law compliance issues.
 // If blockers are found and we haven't retried yet → triggers a regeneration.
 // This creates a self-correction loop in the graph.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const validateComplianceNode = async (
   state: DraftingState
@@ -993,9 +981,8 @@ Return ONLY a JSON object:
 Return { "passed": true, "issues": [] } if the document is fully compliant.`;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 11: NODE 6 — Finalize
-// ─────────────────────────────────────────────────────────────────────────────
 
 const finalizeNode = async (
   state: DraftingState
@@ -1021,9 +1008,8 @@ const finalizeNode = async (
   };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 12: CONDITIONAL ROUTING FUNCTIONS
-// ─────────────────────────────────────────────────────────────────────────────
 
 // After validateInput: proceed or short-circuit on error
 const routeAfterValidation = (
@@ -1085,9 +1071,8 @@ const routeAfterCompliance = (
   return "finalize";
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 13: GRAPH ASSEMBLY
-// ─────────────────────────────────────────────────────────────────────────────
 
 const workflow = new StateGraph(DraftingStateAnnotation)
 
@@ -1132,10 +1117,9 @@ const workflow = new StateGraph(DraftingStateAnnotation)
 
 export const draftingPipeline = workflow.compile();
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 14: PUBLIC RUN FUNCTION
 // The only thing callers import. Hides all LangGraph internals.
-// ─────────────────────────────────────────────────────────────────────────────
 
 export interface RunDraftingOptions {
   query:               string;

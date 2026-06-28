@@ -1,10 +1,5 @@
 // src/ai/pipelines/compliance.pipeline.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// LexAI — Compliance Pipeline (Production Grade)
-// Uses: LangGraph, Hallucination Guard, Structured JSON output
-// Flow: validateInput → generateChecklist → parseChecklist
-//        → verifyCitations → finalize
-// ─────────────────────────────────────────────────────────────────────────────
+
 
 import { StateGraph, START, END, Annotation } from '@langchain/langgraph';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
@@ -16,9 +11,7 @@ import { AppError } from '../../shared/errors/AppError';
 import { SupportedModel } from '../../config/llm.config';
 import type { VerifiedCitation, ConfidenceLevel } from '../guards/hallucination.guard';
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SECTION 1: TYPES
-// ─────────────────────────────────────────────────────────────────────────────
 
 export interface BusinessProfile {
   businessType:  string;   // e.g. "SaaS Startup", "Restaurant"
@@ -56,9 +49,8 @@ const PIPELINE_CONSTANTS = {
   LLM_TIMEOUT_MS: 60_000, // Compliance lists can be long
 } as const;
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 2: STATE DEFINITION
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const ComplianceStateAnnotation = Annotation.Root({
   // INPUT
@@ -132,9 +124,8 @@ export const ComplianceStateAnnotation = Annotation.Root({
 
 export type ComplianceState = typeof ComplianceStateAnnotation.State;
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 3: RETRY HELPER
-// ─────────────────────────────────────────────────────────────────────────────
 
 async function withRetry<T>(fn: () => Promise<T>, maxRetries: number, delayMs: number, ctx: string): Promise<T> {
   let lastError: Error | undefined;
@@ -149,9 +140,8 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries: number, delayMs: n
   throw lastError;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 4: NODES
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Node A: Validate Input
 const validateInputNode = async (
@@ -355,9 +345,8 @@ const finalizeNode = async (
   return { metadata: { ...state.metadata, totalDurationMs } };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 5: ROUTING
-// ─────────────────────────────────────────────────────────────────────────────
 
 const shouldContinueAfterValidation = (s: ComplianceState): 'generateChecklist' | 'finalize' =>
   s.error ? 'finalize' : 'generateChecklist';
@@ -365,9 +354,8 @@ const shouldContinueAfterValidation = (s: ComplianceState): 'generateChecklist' 
 const shouldContinueAfterGenerate = (s: ComplianceState): 'parseChecklist' | 'finalize' =>
   s.error ? 'finalize' : 'parseChecklist';
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 6: COMPILE GRAPH
-// ─────────────────────────────────────────────────────────────────────────────
 
 const workflow = new StateGraph(ComplianceStateAnnotation)
   .addNode('validateInput',     validateInputNode)

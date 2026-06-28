@@ -1,9 +1,8 @@
 // src/ai/pipelines/research.pipeline.ts
-// ─────────────────────────────────────────────────────────────────────────────
+
 // LexAI — Research Pipeline (Production Grade)
 // Uses: LangGraph, LangChain, Hallucination Guard, Confidence Scoring
 // Best Practices: Error handling, retries, logging, streaming, typed state
-// ─────────────────────────────────────────────────────────────────────────────
 
 import { StateGraph, START, END, Annotation } from "@langchain/langgraph";
 import { BaseMessage, HumanMessage, SystemMessage } from "@langchain/core/messages";
@@ -15,11 +14,10 @@ import { AppError } from "../../shared/errors/AppError";
 import { SupportedModel } from "@/config/llm.config";
 import { InputGuard } from "../guards/input.guard";
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 1: CONSTANTS
 // Company best practice: Never hardcode magic numbers inline.
 // Put all tunable values in one place so they are easy to adjust.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const PIPELINE_CONSTANTS = {
   // Confidence thresholds
@@ -38,12 +36,11 @@ const PIPELINE_CONSTANTS = {
   KANOON_MAX_CONCURRENT: 5,         // Verify max 5 citations at once (prevents rate limiting)
 } as const;
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 2: SYSTEM PROMPT
 // Company best practice: System prompts are treated like code.
 // They live in /src/ai/prompts/, are version-controlled, and tested.
 // This one is inlined here for clarity — in production, import from prompts/.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const RESEARCH_SYSTEM_PROMPT = `You are LexAI, an expert AI legal assistant specializing exclusively in Indian law.
 
@@ -98,11 +95,10 @@ End every response with this exact line:
 ---
 *⚖️ This is AI-generated legal information, not legal advice. Consult a qualified advocate before taking any legal action.*`;
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 3: STATE DEFINITION
 // Company best practice: Use LangGraph's Annotation API (not raw channel objects).
 // Every field has a clear reducer and default value.
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const ResearchStateAnnotation = Annotation.Root({
   // INPUT — set before pipeline starts
@@ -178,9 +174,8 @@ export const ResearchStateAnnotation = Annotation.Root({
 // Derive the TypeScript type from the Annotation
 export type ResearchState = typeof ResearchStateAnnotation.State;
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 4: SUPPORTING TYPES
-// ─────────────────────────────────────────────────────────────────────────────
 
 export type ConfidenceLevel = "HIGH" | "MEDIUM" | "LOW";
 
@@ -206,11 +201,10 @@ interface PipelineMetadata {
   outputTokens: number;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 5: HELPER — RETRY WITH EXPONENTIAL BACKOFF
 // Company best practice: Any external API call (LLM, Kanoon) must have retry logic.
 // Network failures are transient — retrying 2–3 times fixes 95% of them.
-// ─────────────────────────────────────────────────────────────────────────────
 
 async function withRetry<T>(
   fn: () => Promise<T>,
@@ -243,11 +237,10 @@ async function withRetry<T>(
   throw lastError;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 6: NODE A — Input Validation
 // Company best practice: Validate at the start of every pipeline.
 // Fail fast with a clear error rather than getting a confusing LLM response.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const validateInputNode = async (
   state: ResearchState
@@ -331,12 +324,11 @@ const validateInputNode = async (
   return {};
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 7: NODE B — Generate Draft
 // Calls the LLM with the system prompt + conversation history + user query.
 // Company best practice: Always include conversation history for context.
 // Always set a timeout. Always log token usage for cost tracking.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const generateDraftNode = async (
   state: ResearchState
@@ -414,12 +406,11 @@ const generateDraftNode = async (
   }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 8: NODE C — Hallucination Guard (Verify Citations)
 // Company best practice: Run ALL verifications concurrently (Promise.all),
 // but cap concurrency to avoid rate-limiting the Kanoon API.
 // Never let a Kanoon failure crash the whole pipeline — gracefully degrade.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const verifyCitationsNode = async (
   state: ResearchState
@@ -504,11 +495,10 @@ const verifyCitationsNode = async (
   };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 9: HELPER — Batch Concurrency for Kanoon Verification
 // Process citations in chunks of N to avoid rate-limiting.
 // Each individual citation verification has its own timeout and error handling.
-// ─────────────────────────────────────────────────────────────────────────────
 
 async function verifyInBatches(
   citations: ExtractedCitation[],
@@ -569,11 +559,10 @@ function timeout(ms: number): Promise<never> {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 10: HELPER — Append Confidence Disclaimer
 // Company best practice: Disclaimers are data, not hardcoded strings.
 // Different confidence levels get different messages.
-// ─────────────────────────────────────────────────────────────────────────────
 
 function appendConfidenceDisclaimer(
   response: string,
@@ -605,12 +594,11 @@ function appendConfidenceDisclaimer(
   return disclaimer ? `${response}${disclaimer}` : response;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 11: NODE D — Finalize
 // Sets total pipeline duration in metadata.
 // Company best practice: Every pipeline has a finalization step that
 // records timing, logs the final result, and prepares the response for the caller.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const finalizeNode = async (
   state: ResearchState
@@ -637,12 +625,11 @@ const finalizeNode = async (
   };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 12: CONDITIONAL ROUTING
 // Company best practice: Use conditional edges to short-circuit the pipeline
 // when an error occurs rather than continuing through broken state.
 // This is the key advantage of LangGraph over a simple function chain.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const shouldContinueAfterValidation = (
   state: ResearchState
@@ -659,11 +646,10 @@ const shouldContinueAfterDraft = (
   return state.error ? "finalize" : "verifyCitations";
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 13: COMPILE THE GRAPH
 // Company best practice: Keep the graph definition clean and readable.
 // Each node does ONE thing. Edges define flow. Conditional edges handle errors.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const workflow = new StateGraph(ResearchStateAnnotation)
 
@@ -694,12 +680,11 @@ const workflow = new StateGraph(ResearchStateAnnotation)
 
 export const researchPipeline = workflow.compile();
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 14: PUBLIC RUN FUNCTION
 // Company best practice: Don't expose the compiled graph directly to callers.
 // Wrap it in a typed function that handles the result and throws proper errors.
 // Callers should never have to understand LangGraph internals.
-// ─────────────────────────────────────────────────────────────────────────────
 
 export interface RunResearchOptions {
   query: string;

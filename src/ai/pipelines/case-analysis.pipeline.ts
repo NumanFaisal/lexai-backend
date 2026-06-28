@@ -1,11 +1,5 @@
 // src/ai/pipelines/case-analysis.pipeline.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// LexAI — Case Analysis Pipeline (Production Grade)
-// Uses: LangGraph, RAG (pgvector), Indian Kanoon API, Hallucination Guard,
-//       Confidence Scoring
-// Flow: validateInput → embedQuery → retrievePrecedents → searchKanoonFallback
-//        → generateIRAC → verifyCitations → finalize
-// ─────────────────────────────────────────────────────────────────────────────
+
 
 import { StateGraph, START, END, Annotation } from '@langchain/langgraph';
 import { BaseMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
@@ -21,9 +15,7 @@ import { InputGuard } from '../guards/input.guard';
 import type { VerifiedCitation, ConfidenceLevel } from '../guards/hallucination.guard';
 import { searchKanoonPrecedents, KanoonSearchResult } from '../../infrastructure/search/kanoon.client';
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SECTION 1: CONSTANTS
-// ─────────────────────────────────────────────────────────────────────────────
 
 const PIPELINE_CONSTANTS = {
   MAX_RETRIES:          2,
@@ -37,9 +29,8 @@ const PIPELINE_CONSTANTS = {
   KANOON_SEARCH_MAX_RESULTS:  3,       // Max precedents to fetch from Kanoon
 } as const;
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 2: STATE DEFINITION
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const CaseAnalysisStateAnnotation = Annotation.Root({
   // INPUT
@@ -141,9 +132,8 @@ export const CaseAnalysisStateAnnotation = Annotation.Root({
 
 export type CaseAnalysisState = typeof CaseAnalysisStateAnnotation.State;
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 3: RETRY HELPER
-// ─────────────────────────────────────────────────────────────────────────────
 
 async function withRetry<T>(
   fn: () => Promise<T>,
@@ -166,9 +156,7 @@ async function withRetry<T>(
   throw lastError;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SECTION 4: NODES
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Node A: Validate Input
 const validateInputNode = async (
@@ -377,7 +365,7 @@ const generateIRACNode = async (
   const llmStart = Date.now();
   logger.info({ msg: '[case-analysis.pipeline] Node: generateIRAC', model: state.selectedModel });
 
-  // ── Build RAG context string from BOTH sources ──────────────────────────
+  // Build RAG context string from BOTH sources
   const ragParts: string[] = [];
 
   // Case Facts (from uploaded PDF)
@@ -535,9 +523,8 @@ const finalizeNode = async (
   };
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 5: CONDITIONAL ROUTING
-// ─────────────────────────────────────────────────────────────────────────────
 
 const shouldContinueAfterValidation = (
   state: CaseAnalysisState
@@ -547,9 +534,7 @@ const shouldContinueAfterIRAC = (
   state: CaseAnalysisState
 ): 'verifyCitations' | 'finalize' => state.error ? 'finalize' : 'verifyCitations';
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SECTION 6: COMPILE GRAPH
-// ─────────────────────────────────────────────────────────────────────────────
 
 const workflow = new StateGraph(CaseAnalysisStateAnnotation)
   .addNode('validateInput',          validateInputNode)
