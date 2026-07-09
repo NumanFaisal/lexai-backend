@@ -1,7 +1,7 @@
 // src/ai/guards/hallucination.guard.ts
-// ─────────────────────────────────────────────────────────────────────────────
+
 // LexAI — Hallucination Guard (Production Grade)
-//
+
 // PURPOSE:
 //   Every AI response passes through this guard before reaching the user.
 //   It extracts every cited section and case name, verifies each one against
@@ -13,22 +13,20 @@
 //   bail application can get it rejected. A fake case citation used in court
 //   can result in serious professional consequences. This guard is LexAI's
 //   most important safety layer.
-//
+
 // ARCHITECTURE:
 //   1. CitationExtractor   — Regex + pattern matching to find all citations
 //   2. SectionValidator    — Hardcoded lookup to verify section ranges per Act
 //   3. KanoonVerifier      — Live API check for case law citations
 //   4. ConfidenceScorer    — Calculates overall response trustworthiness
 //   5. ResponseAnnotator   — Appends badges and disclaimers to the response
-// ─────────────────────────────────────────────────────────────────────────────
 
 import { verifyWithKanoon } from "../../infrastructure/search/kanoon.client";
 import { logger } from "../../config/logger";
 import { redisClient as redis } from "../../config/redis"
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 1: CONSTANTS & CONFIGURATION
-// ─────────────────────────────────────────────────────────────────────────────
 
 const GUARD_CONFIG = {
   // Confidence thresholds
@@ -56,7 +54,7 @@ const CACHE_KEYS = {
   section: (act: string, num: string) => `hg:sec:${slugify(act)}:${num}`,
 } as const;
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 2: INDIAN ACTS LOOKUP TABLE
 //
 // Maps Act name keywords → max valid section number.
@@ -64,7 +62,6 @@ const CACHE_KEYS = {
 //
 // Sources: official bare acts from India Code (indiacode.nic.in)
 // KEEP THIS UPDATED when new Acts are passed or sections are renumbered.
-// ─────────────────────────────────────────────────────────────────────────────
 
 const INDIAN_ACTS_SECTION_MAP: Record<string, ActMetadata> = {
   // Criminal Law
@@ -140,12 +137,11 @@ interface ActMetadata {
   year:       number;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 3: CITATION EXTRACTION — REGEX PATTERNS
 //
 // These patterns match how Claude/Gemini typically cite Indian law.
 // Each pattern is tested individually and combined into a single pass.
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Matches: "Section 138 of the Negotiable Instruments Act"
 //          "Sec. 406 IPC" / "§ 420 IPC" / "S. 302 IPC"
@@ -166,9 +162,8 @@ const CASE_PATTERN =
 const SCHEDULE_PATTERN =
   /(?:First|Second|Third|Fourth|Fifth|Sixth|Seventh|Eighth|Ninth|Tenth|[\dI]+(?:st|nd|rd|th)?)\s+Schedule\s+(?:of\s+)?(?:the\s+)?([A-Z][A-Za-z\s]+(?:Act|Code)\s*\d{4}?)/gi;
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 4: PUBLIC TYPES
-// ─────────────────────────────────────────────────────────────────────────────
 
 export type CitationType = "SECTION" | "ARTICLE" | "CASE_LAW" | "SCHEDULE";
 export type ConfidenceLevel = "HIGH" | "MEDIUM" | "LOW";
@@ -224,9 +219,7 @@ export interface GuardOptions {
   verbose?: boolean;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SECTION 5: CITATION EXTRACTOR
-// ─────────────────────────────────────────────────────────────────────────────
 
 class CitationExtractor {
 
@@ -362,11 +355,10 @@ class CitationExtractor {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // SECTION 6: SECTION VALIDATOR
 // Uses the INDIAN_ACTS_SECTION_MAP to check section numbers without
 // making any API calls. Fast, deterministic, free.
-// ─────────────────────────────────────────────────────────────────────────────
 
 class SectionValidator {
 
@@ -427,11 +419,9 @@ class SectionValidator {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SECTION 7: KANOON VERIFIER
 // Makes live API calls to Indian Kanoon to verify case citations.
 // Results are cached in Redis to avoid repeat API calls for the same case.
-// ─────────────────────────────────────────────────────────────────────────────
 
 class KanoonVerifier {
 
@@ -536,11 +526,9 @@ class KanoonVerifier {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SECTION 8: CONFIDENCE SCORER
 // Calculates an overall confidence score for the response based on
 // how many citations were verified, and assigns a level label.
-// ─────────────────────────────────────────────────────────────────────────────
 
 class ConfidenceScorer {
 
@@ -590,11 +578,9 @@ class ConfidenceScorer {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SECTION 9: RESPONSE ANNOTATOR
 // Optionally appends inline markers to each citation in the text,
 // and always appends a confidence-level disclaimer at the end.
-// ─────────────────────────────────────────────────────────────────────────────
 
 class ResponseAnnotator {
 
@@ -684,11 +670,9 @@ class ResponseAnnotator {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SECTION 10: BATCH PROCESSOR
 // Runs all citation verifications concurrently but caps concurrency
 // to avoid hitting Kanoon's rate limit.
-// ─────────────────────────────────────────────────────────────────────────────
 
 async function runVerificationsInBatches(
   citations:   RawCitation[],
@@ -751,10 +735,8 @@ async function runVerificationsInBatches(
   return { verified: results, cacheHits };
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SECTION 11: MAIN GUARD CLASS — PUBLIC API
 // This is the only thing the rest of the codebase imports and calls.
-// ─────────────────────────────────────────────────────────────────────────────
 
 class HallucinationGuard {
   private extractor  = new CitationExtractor();
@@ -849,9 +831,7 @@ class HallucinationGuard {
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SECTION 12: UTILITY FUNCTIONS
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Normalizes Act name to lowercase for map lookup
 // "Indian Penal Code, 1860" → "indian penal code"
@@ -879,13 +859,11 @@ function rejectAfter(ms: number, message: string): Promise<never> {
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SECTION 13: EXPORTS
 // Export the singleton instance and all types.
 // Usage:
 //   import { hallucinationGuard } from '../guards/hallucination.guard';
 //   const result = await hallucinationGuard.run(claudeResponse);
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const hallucinationGuard = new HallucinationGuard();
 
