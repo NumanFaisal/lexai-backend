@@ -38,3 +38,7 @@ export const voiceProcessingWorker = new Worker(
   },
   { connection: redisClient }
 );
+
+voiceProcessingWorker.on('error', (err) => {
+  logger.error('voiceProcessingWorker Error: ' + err.message);
+});

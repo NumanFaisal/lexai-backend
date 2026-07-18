@@ -91,3 +91,7 @@ export const compliancePdfWorker = new Worker(
   },
   { connection: redisClient }
 );
+
+compliancePdfWorker.on('error', (err) => {
+  logger.error('compliancePdfWorker Error: ' + err.message);
+});

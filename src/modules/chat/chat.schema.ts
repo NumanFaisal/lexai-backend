@@ -24,9 +24,9 @@ export const caseAnalysisChatSchema = z.object({
 
 export const complianceChatSchema = z.object({
   body: z.object({
-    businessType:   z.string().min(2, 'Business type is required.').max(200),
-    state:          z.string().min(2, 'State is required.').max(100),
-    headcount:      z.number().int().min(0).max(100_000),
+    businessType:   z.string().max(200).optional().or(z.literal('')),
+    state:          z.string().max(100).optional().or(z.literal('')),
+    headcount:      z.number().int().min(0).max(100_000).optional().default(0),
     revenueBracket: z.string().max(100).optional().default('Not specified'),
     hasUserData:    z.boolean().optional().default(false),
     isFood:         z.boolean().optional().default(false),

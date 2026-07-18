@@ -12,7 +12,14 @@ export class ComplianceRepository {
         urgentCount: true, 
         completedCount: true, 
         createdAt: true, 
-        pdfUrl: true
+        pdfUrl: true,
+        businessType: true,
+        state: true,
+        headcount: true,
+        revenueBracket: true,
+        hasUserData: true,
+        isFood: true,
+        isFintech: true
       }
     });
   }

@@ -48,7 +48,7 @@ export const handleComplianceChat = async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
   if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-  const { businessType, state, headcount, revenueBracket, hasUserData, isFood, isFintech, model } = req.body;
+  const { businessType, state, headcount, revenueBracket, hasUserData, isFood, isFintech, model, conversationId } = req.body;
 
   const result = await processComplianceQuery(userId, {
     businessType,
@@ -58,7 +58,7 @@ export const handleComplianceChat = async (req: Request, res: Response) => {
     hasUserData,
     isFood,
     isFintech,
-  }, model);
+  }, model, conversationId);
 
   res.status(200).json({ success: true, data: result });
 };

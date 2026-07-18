@@ -2,6 +2,10 @@ import { env } from '@/config/env';
 import { logger } from '@/config/logger';
 import app from './app';
 
+// Initialize background queue workers
+import '@/modules/workers/compliance.worker';
+import '@/modules/workers/voice.worker';
+
 
 
 const PORT = env.PORT;

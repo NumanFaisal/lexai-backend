@@ -101,12 +101,56 @@ export const processCaseAnalysisQuery = async (
 export const processComplianceQuery = async (
   userId:          string,
   businessProfile: BusinessProfile,
-  model:           SupportedModel
+  model:           SupportedModel,
+  conversationId?: string
 ) => {
   console.log(`📋 Starting Compliance Check for user ${userId}...`);
 
   // Verify user exists before proceeding
   await ensureUserExists(userId);
+
+  if (!businessProfile.businessType?.trim() || !businessProfile.state?.trim()) {
+    const missing = [];
+    if (!businessProfile.businessType?.trim()) missing.push('businessType');
+    if (!businessProfile.state?.trim()) missing.push('state');
+
+    const summary = `[INFO_REQUIRED] To compile your compliance checklist, please provide the missing business details: ` +
+      missing.map(m => m === 'businessType' ? 'Business Type' : 'State').join(' and ') + '.';
+
+    // Save query to chat history
+    await prisma.query.create({
+      data: {
+        userId,
+        mode: 'COMPLIANCE',
+        inputText: `Compliance query`,
+        response: summary,
+        confidence: 1.0,
+        confidenceLevel: 'HIGH',
+        citationsRaw: [] as any,
+        citationsVerified: [] as any,
+        hallucinationFlagged: false,
+        latencyMs: 0,
+        promptTokens: 0,
+        responseTokens: 0,
+        totalTokens: 0,
+        ...(conversationId ? { conversationId } : {}),
+      }
+    });
+
+    return {
+      reportId: 'info-required',
+      title: 'Information Required',
+      summary,
+      response: summary,
+      items: [],
+      totalItems: 0,
+      urgentCount: 0,
+      confidenceScore: 1.0,
+      confidenceLevel: 'HIGH' as const,
+      latencyMs: 0,
+      fromCache: false,
+    };
+  }
 
   const result = await complianceAgent.run({ businessProfile, userId, model });
 
@@ -123,6 +167,7 @@ export const processComplianceQuery = async (
     confidenceLevel: result.confidenceLevel,
     latencyMs:       result.latencyMs,
     fromCache:       result.fromCache,
+    response:        result.response,
   };
 };
 
@@ -311,13 +356,61 @@ export const fetchConversationDetails = async (userId: string, conversationId: s
   await ensureUserExists(userId);
 
   const conversation = await getConversationById(conversationId, userId);
-  if (conversation) return conversation;
+  if (conversation) {
+    if (conversation.mode === 'COMPLIANCE') {
+      const reports = await prisma.complianceReport.findMany({
+        where: { userId },
+        include: { items: { orderBy: { priority: 'asc' } } },
+        orderBy: { createdAt: 'desc' }
+      });
+      
+      const mappedQueries = conversation.queries.map(q => {
+        if (q.mode === 'COMPLIANCE') {
+          const matchedReport = reports.find(r => Math.abs(r.createdAt.getTime() - q.createdAt.getTime()) < 10000);
+          if (matchedReport) {
+            return {
+              ...q,
+              reportId: matchedReport.id,
+              complianceItems: matchedReport.items
+            } as any;
+          }
+        }
+        return q;
+      });
+
+      return {
+        ...conversation,
+        queries: mappedQueries
+      };
+    }
+    return conversation;
+  }
 
   const query = await prisma.query.findFirst({
     where: { id: conversationId, userId }
   });
 
   if (query) {
+    let reportId: string | undefined;
+    let complianceItems: any[] | undefined;
+
+    if (query.mode === 'COMPLIANCE') {
+      const matchedReport = await prisma.complianceReport.findFirst({
+        where: {
+          userId,
+          createdAt: {
+            gte: new Date(query.createdAt.getTime() - 5000),
+            lte: new Date(query.createdAt.getTime() + 5000)
+          }
+        },
+        include: { items: { orderBy: { priority: 'asc' } } }
+      });
+      if (matchedReport) {
+        reportId = matchedReport.id;
+        complianceItems = matchedReport.items;
+      }
+    }
+
     return {
       id:         query.id,
       userId:     query.userId,
@@ -328,7 +421,10 @@ export const fetchConversationDetails = async (userId: string, conversationId: s
       isArchived: false,
       createdAt:  query.createdAt,
       updatedAt:  query.createdAt,
-      queries:    [query],
+      queries:    [{
+        ...query,
+        ...(reportId ? { reportId, complianceItems } : {})
+      }],
     };
   }
 

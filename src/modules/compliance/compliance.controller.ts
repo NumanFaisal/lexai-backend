@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { ComplianceService } from './compliance.service';
 import { ComplianceRepository } from './compliance.repository';
 import { GenerateComplianceInput, UpdateItemInput } from './compliance.schema';
+import { r2Storage } from '../../infrastructure/storage/r2.storage';
 
 export const generateComplianceReport = async (
   req: Request<unknown, unknown, GenerateComplianceInput>,
@@ -25,7 +26,21 @@ export const listComplianceReports = async (req: Request, res: Response) => {
     if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
     const reports = await ComplianceRepository.listReports(userId);
-    res.status(200).json({ status: 'success', data: reports });
+    
+    const mappedReports = await Promise.all(reports.map(async (r: any) => {
+      if (r.pdfUrl) {
+        try {
+          const filename = `${r.businessType || 'Compliance'}${r.state ? `_${r.state}` : ''}_Compliance_Report.pdf`.replace(/\s+/g, '_');
+          const signedUrl = await r2Storage.getSignedDownloadUrl(r.pdfUrl, 3600, filename);
+          return { ...r, pdfUrl: signedUrl };
+        } catch (err) {
+          console.error('Failed to sign pdfUrl for compliance report:', err);
+        }
+      }
+      return r;
+    }));
+
+    res.status(200).json({ status: 'success', data: mappedReports });
   } catch (error) {
     res.status(500).json({ status: 'error', message: (error as Error).message });
   }
@@ -40,6 +55,16 @@ export const getComplianceReport = async (req: Request<{ reportId: string }>, re
     
     if (!report) {
       return res.status(404).json({ status: 'error', message: 'Compliance report not found' });
+    }
+
+    if (report.pdfUrl) {
+      try {
+        const filename = `${report.businessType || 'Compliance'}${report.state ? `_${report.state}` : ''}_Compliance_Report.pdf`.replace(/\s+/g, '_');
+        const signedUrl = await r2Storage.getSignedDownloadUrl(report.pdfUrl, 3600, filename);
+        (report as any).pdfUrl = signedUrl;
+      } catch (err) {
+        console.error('Failed to sign pdfUrl for compliance report:', err);
+      }
     }
 
     res.status(200).json({ status: 'success', data: report });

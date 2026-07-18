@@ -39,6 +39,7 @@ export interface ComplianceAgentOutput {
   confidenceLevel: 'HIGH' | 'MEDIUM' | 'LOW';
   latencyMs:       number;
   fromCache:       boolean;
+  response?:       string;
 }
 
 // Map LLM string categories → Prisma enum
@@ -100,11 +101,25 @@ export class ComplianceAgent extends BaseAgent {
     // ── Step 3: Persist to ComplianceReport + ComplianceItem DB tables ────
     const reportId = await this.saveComplianceReport(userId, businessProfile, result);
 
+    // Format compliance checklist as markdown for query response
+    let markdownResponse = `### Compliance Audit Checklist\n\n${result.checklist.summary}\n\n`;
+    result.checklist.items.forEach((item: any) => {
+      markdownResponse += `\n**[${item.priority || 'INFO'}] ${item.title || 'Obligation'}**\n`;
+      markdownResponse += `* **Law**: ${item.law || 'N/A'}${item.section ? ` (Section ${item.section})` : ''}\n`;
+      markdownResponse += `* **Requirement**: ${item.requirement || 'N/A'}\n`;
+      if (item.deadline) markdownResponse += `* **Deadline**: ${item.deadline}\n`;
+      if (item.penalty) markdownResponse += `* **Penalty**: ${item.penalty}\n`;
+      if (item.action) markdownResponse += `* **Action Required**: ${item.action}\n`;
+    });
+    if (result.checklist.disclaimer) {
+      markdownResponse += `\n\n_${result.checklist.disclaimer}_`;
+    }
+
     // ── Step 4: Also save as a Query record for chat history ──────────────
     await this.saveQuery({
       userId,
       inputText:       `Compliance check: ${businessProfile.businessType}, ${businessProfile.state}, ${businessProfile.headcount} employees`,
-      response:        result.checklist.summary,
+      response:        markdownResponse,
       mode:            'COMPLIANCE',
       confidenceScore: result.confidenceScore,
       latencyMs:       this.getLatency(),
@@ -124,6 +139,7 @@ export class ComplianceAgent extends BaseAgent {
       confidenceLevel: result.confidenceLevel,
       latencyMs:       this.getLatency(),
       fromCache:       false,
+      response:        markdownResponse,
     };
 
     await this.setCachedResult(cacheKey, output, CACHE_TTL_SECONDS);

@@ -50,10 +50,11 @@ export const r2Storage = {
    * @returns A secure HTTPS URL
    */
 
-  async getSignedDownloadUrl(key: string, expiresInSeconds: number = 3600): Promise<string> {
+  async getSignedDownloadUrl(key: string, expiresInSeconds: number = 3600, filename?: string): Promise<string> {
     const command = new GetObjectCommand({
       Bucket: env.R2_BUCKET_NAME,
       Key: key,
+      ...(filename ? { ResponseContentDisposition: `attachment; filename="${filename}"` } : {})
     });
 
 
