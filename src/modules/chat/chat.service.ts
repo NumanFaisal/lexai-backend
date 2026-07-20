@@ -159,6 +159,9 @@ export const processComplianceQuery = async (
   // Verify user exists before proceeding
   await ensureUserExists(userId);
 
+  const promptText = `Compliance audit for ${businessProfile.businessType || 'business'} in ${businessProfile.state || 'India'}`;
+  const targetConvId = await ensureConversationWithTitle(userId, 'COMPLIANCE', promptText, conversationId);
+
   if (!businessProfile.businessType?.trim() || !businessProfile.state?.trim()) {
     const missing = [];
     if (!businessProfile.businessType?.trim()) missing.push('businessType');
@@ -172,7 +175,7 @@ export const processComplianceQuery = async (
       data: {
         userId,
         mode: 'COMPLIANCE',
-        inputText: `Compliance query`,
+        inputText: promptText,
         response: summary,
         confidence: 1.0,
         confidenceLevel: 'HIGH',
@@ -183,12 +186,13 @@ export const processComplianceQuery = async (
         promptTokens: 0,
         responseTokens: 0,
         totalTokens: 0,
-        ...(conversationId ? { conversationId } : {}),
+        conversationId: targetConvId,
       }
     });
 
     return {
       reportId: 'info-required',
+      conversationId: targetConvId,
       title: 'Information Required',
       summary,
       response: summary,
@@ -204,10 +208,31 @@ export const processComplianceQuery = async (
 
   const result = await complianceAgent.run({ businessProfile, userId, model });
 
+  // Save successful compliance query to DB
+  await prisma.query.create({
+    data: {
+      userId,
+      mode: 'COMPLIANCE',
+      inputText: promptText,
+      response: result.response || result.summary,
+      confidence: result.confidenceScore,
+      confidenceLevel: result.confidenceLevel,
+      citationsRaw: [] as any,
+      citationsVerified: [] as any,
+      hallucinationFlagged: false,
+      latencyMs: result.latencyMs,
+      promptTokens: 0,
+      responseTokens: 0,
+      totalTokens: 0,
+      conversationId: targetConvId,
+    }
+  });
+
   await redisClient.del(`history:${userId}`);
 
   return {
     reportId:        result.reportId,
+    conversationId:  targetConvId,
     title:           result.title,
     summary:         result.summary,
     items:           result.items,
