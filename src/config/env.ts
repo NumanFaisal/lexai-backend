@@ -18,6 +18,7 @@ const envSchema = z.object({
   ANTHROPIC_API_KEY: z.string(),
   OPENAI_API_KEY: z.string(),
   GOOGLE_API_KEY: z.string(),
+  GROQ_API_KEY: z.string().optional(),
 
   // Redis (Upstash) URL
   UPSTASH_REDIS_URL: z.string(),

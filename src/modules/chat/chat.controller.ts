@@ -11,38 +11,37 @@ import {
   processDraftingEdit,
   processVoiceInput,
 } from './chat.service';
+import { GroqProvider } from '../../ai/providers/groq.provider';
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // RESEARCH
-// ─────────────────────────────────────────────────────────────────────────────
+
 
 export const handleResearchChat = async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
   if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-  const { message, model } = req.body;
-  const result = await processResearchQuery(userId, message, model);
+  const { message, model, conversationId } = req.body;
+  const result = await processResearchQuery(userId, message, model, conversationId);
 
   res.status(200).json({ success: true, data: result });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // CASE ANALYSIS
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const handleCaseAnalysisChat = async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
   if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
 
-  const { message, model } = req.body;
-  const result = await processCaseAnalysisQuery(userId, message, model);
+  const { message, model, conversationId } = req.body;
+  const result = await processCaseAnalysisQuery(userId, message, model, conversationId);
 
   res.status(200).json({ success: true, data: result });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // COMPLIANCE
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const handleComplianceChat = async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
@@ -63,9 +62,8 @@ export const handleComplianceChat = async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data: result });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // DRAFTING
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const handleDraftingChat = async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
@@ -98,9 +96,8 @@ export const handleDraftingEdit = async (req: Request, res: Response) => {
   res.status(200).json({ success: true, data: result });
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
+
 // HISTORY & CONVERSATIONS
-// ─────────────────────────────────────────────────────────────────────────────
 
 export const getChatHistory = async (req: Request, res: Response) => {
   const userId = req.auth?.userId;
@@ -144,7 +141,15 @@ export const handleVoiceInput = async (req: Request, res: Response) => {
     req.file.mimetype
   );
 
-  res.status(200).json({ success: true, data: result })
+  res.status(200).json({ success: true, data: result });
+};
 
-  
-}
+export const handleGenerateTitle = async (req: Request, res: Response) => {
+  const { prompt } = req.body;
+  if (!prompt || typeof prompt !== 'string') {
+    return res.status(400).json({ success: false, message: 'Prompt is required' });
+  }
+
+  const title = await GroqProvider.generateTitle(prompt);
+  res.status(200).json({ success: true, data: { title } });
+};

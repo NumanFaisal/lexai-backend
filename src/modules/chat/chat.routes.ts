@@ -11,6 +11,7 @@ import {
   getConversation,
   handleDraftingEdit,
   handleVoiceInput,
+  handleGenerateTitle,
 } from './chat.controller';
 import { requireAuth } from '../../shared/middleware/auth.middleware';
 import { asyncHandler } from '../../shared/utils/async.wrapper';
@@ -22,7 +23,7 @@ import {
   complianceChatSchema,
   draftingChatSchema,
 } from './chat.schema';
-import { aiRateLimiter } from '@/shared/middleware/rate-limit.middleware';
+import { aiRateLimiter, apiRateLimiter } from '@/shared/middleware/rate-limit.middleware';
 import { enforceQueryLimit } from '@/shared/middleware/query-limit.middleware';
 
 const router = Router();
@@ -99,30 +100,26 @@ router.post(
 );
 
 // GET /api/v1/chat/history
-
 router.get(
   '/history',
   requireAuth,
-  enforceQueryLimit,
-  aiRateLimiter,
+  apiRateLimiter,
   asyncHandler(getChatHistory)
 );
 
 // GET /api/v1/chat/conversations
-
 router.get(
   '/conversations',
   requireAuth,
-  enforceQueryLimit,
+  apiRateLimiter,
   asyncHandler(getConversations)
 );
 
 // GET /api/v1/chat/conversations/:id
-
 router.get(
   '/conversations/:id',
   requireAuth,
-  enforceQueryLimit,
+  apiRateLimiter,
   asyncHandler(getConversation)
 );
 
@@ -152,8 +149,15 @@ router.post(
   aiRateLimiter,
   uploadAudio.single('audio'),
   asyncHandler(handleVoiceInput)
+);
 
-)
-
+// POST /api/v1/chat/generate-title (Groq powered title generator)
+router.post(
+  '/generate-title',
+  express.json(),
+  requireAuth,
+  apiRateLimiter,
+  asyncHandler(handleGenerateTitle)
+);
 
 export default router;

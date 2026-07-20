@@ -8,6 +8,7 @@ export const saveResearchQuery = async (data: {
   confidenceScore: number;
   citationsRaw: any[];
   citationsVerified: any[];
+  conversationId?: string;
 }) => {
   let confidenceLevel: ConfidenceLevel = ConfidenceLevel.HIGH;
   if (data.confidenceScore < 0.5) confidenceLevel = ConfidenceLevel.LOW;
@@ -24,6 +25,7 @@ export const saveResearchQuery = async (data: {
       citationsRaw: data.citationsRaw || [],
       citationsVerified: data.citationsVerified || [],
       hallucinationFlagged: data.confidenceScore < 0.5,
+      ...(data.conversationId ? { conversationId: data.conversationId } : {}),
       
       // 🔥 ADD THIS: Save individual records to the Citation table
       citations: {
@@ -51,11 +53,19 @@ export const getUserHistory = async (userId: string, limit: number = 50) => {
     take: limit, // Only grab the last 50 to keep it fast
     select: {
       id: true,
+      mode: true,
       inputText: true,
       response: true,
       confidenceLevel: true,
       citationsVerified: true,
       createdAt: true,
+      conversationId: true,
+      conversation: {
+        select: {
+          title: true,
+          mode: true,
+        },
+      },
     }
   });
 };

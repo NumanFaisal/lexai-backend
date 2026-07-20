@@ -16,6 +16,7 @@ import crypto from 'crypto';
 import { WhisperProvider } from '../../ai/providers/whisper.provider';
 import { saveVoiceTranscription } from '../voice/voice.repository';
 import { QuerySource } from '@prisma/client';
+import { GroqProvider } from '../../ai/providers/groq.provider';
 
 // RESEARCH
 
@@ -35,11 +36,54 @@ const ensureUserExists = async (userId: string) => {
   return user;
 };
 
-export const processResearchQuery = async (userId: string, query: string, model: SupportedModel) => {
+export const ensureConversationWithTitle = async (
+  userId: string,
+  mode: 'RESEARCH' | 'DRAFT' | 'COMPLIANCE' | 'CASE_ANALYSIS',
+  prompt: string,
+  conversationId?: string
+): Promise<string> => {
+  if (conversationId && !conversationId.startsWith('temp_') && !conversationId.startsWith('conv_')) {
+    const existing = await prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (existing) {
+      if (!existing.title || existing.title.length > 45) {
+        const title = await GroqProvider.generateTitle(prompt);
+        await prisma.conversation.update({
+          where: { id: conversationId },
+          data: { title, updatedAt: new Date() },
+        });
+      }
+      return conversationId;
+    }
+  }
+
+  const title = await GroqProvider.generateTitle(prompt);
+  const newConv = await prisma.conversation.create({
+    data: {
+      userId,
+      title,
+      persona: 'ADVOCATE',
+      mode,
+      source: 'WEB',
+    },
+  });
+
+  return newConv.id;
+};
+
+export const processResearchQuery = async (
+  userId: string,
+  query: string,
+  model: SupportedModel,
+  conversationId?: string
+) => {
   console.log(`🧠 Starting AI Research for user ${userId} using ${model}...`);
 
   // Verify user exists before proceeding
   await ensureUserExists(userId);
+
+  const targetConvId = await ensureConversationWithTitle(userId, 'RESEARCH', query, conversationId);
 
   const result = await runResearchPipeline({
     query,
@@ -54,6 +98,7 @@ export const processResearchQuery = async (userId: string, query: string, model:
     confidenceScore:   result.confidenceScore,
     citationsRaw:      [],
     citationsVerified: result.citationsVerified,
+    conversationId:    targetConvId,
   });
 
   // Cache invalidation — clear history cache so new query appears
@@ -61,6 +106,7 @@ export const processResearchQuery = async (userId: string, query: string, model:
 
   return {
     queryId:         savedRecord.id,
+    conversationId:  targetConvId,
     response:        result.finalResponse,
     confidenceScore: result.confidenceScore,
     confidenceLevel: result.confidenceLevel,
@@ -73,12 +119,15 @@ export const processResearchQuery = async (userId: string, query: string, model:
 export const processCaseAnalysisQuery = async (
   userId: string,
   query:  string,
-  model:  SupportedModel
+  model:  SupportedModel,
+  conversationId?: string
 ) => {
   console.log(`⚖️ Starting Case Analysis for user ${userId} using ${model}...`);
 
   // Verify user exists before proceeding
   await ensureUserExists(userId);
+
+  const targetConvId = await ensureConversationWithTitle(userId, 'CASE_ANALYSIS', query, conversationId);
 
   const result = await caseAnalysisAgent.run({ query, userId, model });
 
@@ -86,6 +135,7 @@ export const processCaseAnalysisQuery = async (
 
   return {
     queryId:         result.queryId,
+    conversationId:  targetConvId,
     response:        result.response,
     confidenceScore: result.confidenceScore,
     confidenceLevel: result.confidenceLevel,
@@ -281,20 +331,23 @@ export const fetchUserChatHistory = async (userId: string) => {
   // Verify user exists before proceeding
   await ensureUserExists(userId);
 
-  const cacheKey = `history:${userId}`;
-
-  const cachedHistory = await redisClient.get(cacheKey);
-  if (cachedHistory) {
-    console.log(`⚡ Serving history for ${userId} from Redis Cache`);
-    return JSON.parse(cachedHistory);
-  }
-
   console.log(`🗄️ Fetching history for ${userId} from Database`);
   const history = await getUserHistory(userId);
 
-  await redisClient.set(cacheKey, JSON.stringify(history), 'EX', 3600);
+  const historyWithTitles = await Promise.all(
+    history.map(async (item: any) => {
+      let title = item.conversation?.title;
+      if (!title || title.length > 50) {
+        title = await GroqProvider.generateTitle(item.inputText);
+      }
+      return {
+        ...item,
+        title,
+      };
+    })
+  );
 
-  return history;
+  return historyWithTitles;
 };
 
 export const fetchUserConversations = async (userId: string, page: number = 1, limit: number = 20) => {
@@ -325,19 +378,49 @@ export const fetchUserConversations = async (userId: string, page: number = 1, l
     });
 
     if (totalLegacy > 0) {
-      conversations = legacyQueries.map(q => ({
-        id:         q.id,
-        userId,
-        title:      q.inputText.split('\n')[0].substring(0, 60),
-        persona:    'ADVOCATE',
-        mode:       q.mode,
-        source:     q.source,
-        isArchived: false,
-        createdAt:  q.createdAt,
-        updatedAt:  q.createdAt,
-      })) as any;
+      conversations = await Promise.all(
+        legacyQueries.map(async (q) => {
+          let title = q.inputText.split('\n')[0].trim();
+          if (title.length > 30) {
+            title = await GroqProvider.generateTitle(q.inputText);
+          }
+          return {
+            id:         q.id,
+            userId,
+            title,
+            persona:    'ADVOCATE',
+            mode:       q.mode,
+            source:     q.source,
+            isArchived: false,
+            createdAt:  q.createdAt,
+            updatedAt:  q.createdAt,
+          } as any;
+        })
+      );
       total = totalLegacy;
     }
+  } else {
+    // For real DB conversations, ensure titles are concise via Groq if missing or too long
+    conversations = await Promise.all(
+      conversations.map(async (conv) => {
+        if (!conv.title || conv.title.length > 45) {
+          const firstQuery = await prisma.query.findFirst({
+            where: { conversationId: conv.id },
+            orderBy: { createdAt: 'asc' },
+            select: { inputText: true },
+          });
+          if (firstQuery?.inputText) {
+            const aiTitle = await GroqProvider.generateTitle(firstQuery.inputText);
+            await prisma.conversation.update({
+              where: { id: conv.id },
+              data: { title: aiTitle },
+            });
+            return { ...conv, title: aiTitle };
+          }
+        }
+        return conv;
+      })
+    );
   }
 
   return {
