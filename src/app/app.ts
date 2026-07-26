@@ -22,6 +22,8 @@ import voiceRoutes from '../modules/voice/voice.routes';
 import whatsappRoutes from '../modules/whatsapp/whatsapp.routes';
 
 import adminRoutes from '../modules/admin/admin.routes';
+import templatesRoutes from '../modules/templates/templates.routes';
+import draftsRoutes from '../modules/drafts/drafts.routes';
 
 const app = express();
 
@@ -88,6 +90,8 @@ app.use('/api/v1/case-analysis', caseAnalysisRoutes);
 app.use('/api/v1/voice', voiceRoutes);
 app.use('/api/v1/whatsapp', whatsappRoutes);
 app.use('/api/v1/admin', adminRoutes);
+app.use('/api/v1/templates', templatesRoutes);
+app.use('/api/v1/drafts', draftsRoutes);
 /*
 |--------------------------------------------------------------------------
 | 404 Handler
