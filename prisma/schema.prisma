@@ -191,6 +191,7 @@ model User {
   usageLogs         UsageLog[]
   adminLogs         AdminLog[]       @relation("AdminTarget")
   userCaseFiles     UserCaseFile[]
+  drafts            Draft[]
 
   // Indexes — critical for performance at scale
   @@index([phone])
@@ -827,4 +828,71 @@ model UserCaseChunk {
 
   @@index([caseFileId])
   @@map("user_case_chunks")
+}
+
+// ENUMS for Drafting Templates
+enum CourtTier {
+  SUPREME_COURT
+  HIGH_COURT
+  DISTRICT_COURT
+  GENERAL
+}
+
+enum DraftStatus {
+  IN_PROGRESS
+  COMPLETE
+}
+
+// MODEL 21: TEMPLATE
+// Read-only templates seeded into the DB for the drafting editor
+model Template {
+  id             String    @id @default(cuid())
+  title          String
+  slug           String    @unique
+  courtTier      CourtTier
+  category       String
+  tags           String[]
+  description    String    @default("")
+  sortOrder      Int       @default(0)
+  bodyContent    Json      // TipTap document JSON, with placeholder nodes embedded
+  isActive       Boolean   @default(true)
+  usageCount     Int       @default(0)
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  drafts         Draft[]
+
+  @@map("templates")
+}
+
+// MODEL 22: DRAFT
+// User's working drafts from templates
+model Draft {
+  id          String   @id @default(cuid())
+  userId      String
+  templateId  String?
+  title       String
+  content     String   @db.Text
+  status      DraftStatus @default(IN_PROGRESS)
+  
+  // Exported files (stored in Cloudflare R2)
+  pdfUrl        String?         
+  docxUrl       String?         
+  pdfGeneratedAt DateTime?
+  docxGeneratedAt DateTime?
+
+  // Sharing
+  sharedToken   String?         @unique    
+  isShared      Boolean         @default(false)
+  sharedAt      DateTime?
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  user        User      @relation(fields: [userId], references: [id])
+  template    Template? @relation(fields: [templateId], references: [id])
+
+  @@index([userId])
+  @@index([templateId])
+  @@map("drafts")
 }

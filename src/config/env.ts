@@ -15,7 +15,6 @@ const envSchema = z.object({
   JWT_SECRET: z.string().default('fallback_secret'),
 
   // Ai model API keys
-  ANTHROPIC_API_KEY: z.string(),
   OPENAI_API_KEY: z.string(),
   GOOGLE_API_KEY: z.string(),
   GROQ_API_KEY: z.string().optional(),
@@ -34,8 +33,8 @@ const envSchema = z.object({
   R2_BUCKET_NAME: z.string(),
 
   // Twilio Configuration
-  TWILIO_ACCOUNT_SID: z.string(),
-  TWILIO_AUTH_TOKEN: z.string(),
+  TWILIO_ACCOUNT_SID: z.string().optional(),
+  TWILIO_AUTH_TOKEN: z.string().optional(),
 
   // Add other keys here as you need them (Razorpay, Twilio, etc.)
 });
