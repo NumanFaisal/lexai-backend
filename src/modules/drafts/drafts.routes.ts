@@ -14,5 +14,8 @@ router.delete('/:id', asyncHandler(controller.deleteDraft));
 router.get('/:id/export/pdf', asyncHandler(controller.exportPdf));
 router.get('/:id/export/docx', asyncHandler(controller.exportDocx));
 router.post('/:id/share', asyncHandler(controller.enableShare));
+router.get('/:id/suggestions', asyncHandler(controller.getSuggestions));
+router.post('/:id/revise', asyncHandler(controller.reviseDraft));
+router.post('/:id/ask', asyncHandler(controller.askDraft));
 
 export default router;

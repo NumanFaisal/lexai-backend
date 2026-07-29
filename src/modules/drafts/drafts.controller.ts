@@ -47,3 +47,31 @@ export const enableShare = async (req: Request, res: Response) => {
     sharedToken: draft.sharedToken 
   });
 };
+
+export const getSuggestions = async (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  const suggestions = await draftsService.getDraftSuggestions(req.auth!.userId, id);
+  res.status(200).json({ success: true, data: { suggestions } });
+};
+
+export const reviseDraft = async (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  const { instruction } = req.body;
+  if (!instruction) {
+    return res.status(400).json({ success: false, message: 'Instruction is required' });
+  }
+  
+  const draft = await draftsService.reviseDraft(req.auth!.userId, id, instruction);
+  res.status(200).json({ success: true, data: { draft } });
+};
+
+export const askDraft = async (req: Request, res: Response) => {
+  const id = req.params.id as string;
+  const { question } = req.body;
+  if (!question) {
+    return res.status(400).json({ success: false, message: 'Question is required' });
+  }
+  
+  const answer = await draftsService.askDraft(req.auth!.userId, id, question);
+  res.status(200).json({ success: true, data: { answer } });
+};
