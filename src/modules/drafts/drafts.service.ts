@@ -1,6 +1,6 @@
 import prisma from '../../config/db';
-import { NotFoundError, AppError } from '../../shared/errors/AppError';
-import { DraftStatus, DocumentType } from '@prisma/client';
+import { NotFoundError } from '../../shared/errors/AppError';
+import { DraftStatus } from '@prisma/client';
 import crypto from 'crypto';
 import { r2Storage } from '../../infrastructure/storage/r2.storage';
 import fs from 'fs/promises';
@@ -12,6 +12,8 @@ import htmlToPdfmake from 'html-to-pdfmake';
 // @ts-ignore
 import jsdom from 'jsdom';
 import pdfmake from 'pdfmake';
+import { reviewAgent } from '../../ai/agents/drafting/review.agent';
+import { analysisAgent } from '../../ai/agents/drafting/analysis.agent';
 
 export const getUserDrafts = async (userId: string) => {
   return await prisma.draft.findMany({
@@ -155,3 +157,80 @@ export const enableShareLinkDraft = async (userId: string, draftId: string) => {
   });
 };
 
+export const getDraftSuggestions = async (userId: string, draftId: string) => {
+  const draft = await prisma.draft.findFirst({
+    where: { id: draftId, userId },
+  });
+
+  if (!draft) throw new NotFoundError('Draft not found');
+
+  // Infer document type for checklists
+  let docType = 'NDA';
+  const title = draft.title.toLowerCase();
+  if (title.includes('employment')) docType = 'EMPLOYMENT_AGREEMENT';
+  else if (title.includes('rent') || title.includes('lease')) docType = 'RENT_AGREEMENT';
+  else if (title.includes('vakalatnama')) docType = 'VAKALATNAMA';
+  else if (title.includes('sale deed')) docType = 'SALE_DEED';
+  else if (title.includes('power of attorney') || title.includes('gpa')) docType = 'POWER_OF_ATTORNEY';
+  else if (title.includes('anticipatory bail')) docType = 'BAIL_APPLICATION';
+  else if (title.includes('bail')) docType = 'BAIL_APPLICATION';
+  
+  const documentFields = analysisAgent.extractFieldsFromHTML(draft.content);
+  const missingClauses = await analysisAgent.detectMissingClauses(draft.content, docType);
+  const jurisWarnings = analysisAgent.checkJurisdictionConsistency(documentFields);
+
+  const unifiedSuggestions = [
+    ...missingClauses.map(m => ({
+      id: Math.random().toString(36).substr(2, 9),
+      type: m.severity === 'high' ? 'warning' : 'improvement',
+      text: `Missing Clause: ${m.clauseType.replace(/_/g, ' ')}. ${m.suggestedAction}`,
+      actionPrompt: m.suggestedAction
+    })),
+    ...jurisWarnings.map(j => ({
+      id: Math.random().toString(36).substr(2, 9),
+      type: 'warning',
+      text: j.message,
+      actionPrompt: 'Review Jurisdiction'
+    }))
+  ];
+
+  // If no specific missing clauses, we can add a generic improvement
+  if (unifiedSuggestions.length === 0) {
+    unifiedSuggestions.push({
+      id: Math.random().toString(36).substr(2, 9),
+      type: 'improvement',
+      text: 'Consider adding a severability and waiver clause for stronger enforceability.',
+      actionPrompt: 'Add severability and waiver clauses'
+    });
+  }
+
+  return unifiedSuggestions;
+};
+
+export const reviseDraft = async (userId: string, draftId: string, instruction: string) => {
+  const draft = await prisma.draft.findFirst({
+    where: { id: draftId, userId },
+  });
+
+  if (!draft) throw new NotFoundError('Draft not found');
+
+  const revisedHTML = await reviewAgent.reviseHTMLDocument(userId, draft.content, draft.title || 'Legal Document', instruction);
+  
+  const updatedDraft = await prisma.draft.update({
+    where: { id: draftId },
+    data: { content: revisedHTML },
+  });
+
+  return updatedDraft;
+};
+
+export const askDraft = async (userId: string, draftId: string, question: string) => {
+  const draft = await prisma.draft.findFirst({
+    where: { id: draftId, userId },
+  });
+
+  if (!draft) throw new NotFoundError('Draft not found');
+
+  const answer = await reviewAgent.answerQuestion(draft.content, draft.title || 'Legal Document', question);
+  return answer;
+};

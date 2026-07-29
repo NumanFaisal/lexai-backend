@@ -45,8 +45,8 @@ const templatesToSeed = [
 
 ## SIGNATURE AND DATE
 - IN WITNESS WHEREOF, the Parties have executed this Agreement on the date first written above.
-- For {{disclosing_party_name}}, Signature: ___________________, Name: {{disclosing_party_signatory}}, Designation: __________________
-- For {{receiving_party_name}}, Signature: ___________________, Name: {{receiving_party_signatory}}, Designation: __________________`,
+- For {{disclosing_party_name}}, Signature: {{disclosing_party_signature}}, Name: {{disclosing_party_signatory}}, Designation: {{disclosing_party_designation}}
+- For {{receiving_party_name}}, Signature: {{receiving_party_signature}}, Name: {{receiving_party_signatory}}, Designation: {{receiving_party_designation}}`,
   },
   {
     title: 'Employment Agreement',
@@ -97,8 +97,8 @@ const templatesToSeed = [
 
 ## SIGNATURE AND DATE
 - IN WITNESS WHEREOF, the parties have executed this Agreement on the date first written above.
-- For {{company_name}}, Signature: ___________________, Name: {{company_signatory_name}}, Designation: {{company_signatory_designation}}
-- Employee Signature: ___________________, Name: {{employee_name}}`,
+- For {{company_name}}, Signature: {{company_signature}}, Name: {{company_signatory_name}}, Designation: {{company_signatory_designation}}
+- Employee Signature: {{employee_signature}}, Name: {{employee_name}}`,
   },
   {
     title: 'Rent / Lease Agreement',
@@ -144,9 +144,9 @@ const templatesToSeed = [
 
 ## SIGNATURE AND DATE
 - IN WITNESS WHEREOF, both parties have signed this Agreement on the date first written above.
-- Owner Signature: ___________________, Name: {{owner_name}}
-- Tenant Signature: ___________________, Name: {{tenant_name}}
-- Witnesses: 1. Name: ______________ Signature: ______________; 2. Name: ______________ Signature: ______________`,
+- Owner Signature: {{owner_signature}}, Name: {{owner_name}}
+- Tenant Signature: {{tenant_signature}}, Name: {{tenant_name}}
+- Witnesses: 1. Name: {{witness_1_name}} Signature: {{witness_1_signature}}; 2. Name: {{witness_2_name}} Signature: {{witness_2_signature}}`,
   },
   {
     title: 'Vakalatnama',
@@ -179,8 +179,8 @@ const templatesToSeed = [
 - I/We do hereby agree to ratify and confirm all acts done by the Advocate or his/her substitute in the matter as my/our own acts.
 
 ## SIGNATURE AND DATE
-- Signature of Client(s): _______________________________
-- Advocate Name: {{advocate_name}}, Enrollment No.: {{advocate_enrollment_no}}, Signature: ___________
+- Signature of Client(s): {{client_signature}}
+- Advocate Name: {{advocate_name}}, Enrollment No.: {{advocate_enrollment_no}}, Signature: {{advocate_signature}}
 - Date: {{vakalatnama_date}}
 - Place: {{vakalatnama_place}}`,
   },
@@ -221,9 +221,9 @@ const templatesToSeed = [
 
 ## SIGNATURE AND DATE
 - IN WITNESS WHEREOF the parties have signed this Sale Deed on the date first written above, in the presence of the witnesses below.
-- Vendor Signature: ___________________, Name: {{vendor_name}}
-- Purchaser Signature: ___________________, Name: {{purchaser_name}}
-- Witnesses: 1. Name: ______________ Address: ______________ Signature: ______________; 2. Name: ______________ Address: ______________ Signature: ______________`,
+- Vendor Signature: {{vendor_signature}}, Name: {{vendor_name}}
+- Purchaser Signature: {{purchaser_signature}}, Name: {{purchaser_name}}
+- Witnesses: 1. Name: {{witness_1_name}} Address: {{witness_1_address}} Signature: {{witness_1_signature}}; 2. Name: {{witness_2_name}} Address: {{witness_2_address}} Signature: {{witness_2_signature}}`,
   },
   {
     title: 'Power of Attorney (General)',
@@ -263,9 +263,9 @@ const templatesToSeed = [
 
 ## SIGNATURE AND DATE
 - IN WITNESS WHEREOF the Principal has executed this Power of Attorney on the date first written above.
-- Signature of the Principal: _______________________________ ({{principal_name}})
-- Accepted by me: Signature of the Attorney: _______________________________ ({{attorney_name}})
-- Witnesses: 1. Name: ______________ Signature: ______________; 2. Name: ______________ Signature: ______________`,
+- Signature of the Principal: {{principal_signature}} ({{principal_name}})
+- Accepted by me: Signature of the Attorney: {{attorney_signature}} ({{attorney_name}})
+- Witnesses: 1. Name: {{witness_1_name}} Signature: {{witness_1_signature}}; 2. Name: {{witness_2_name}} Signature: {{witness_2_signature}}`,
   },
   {
     title: 'Bail Application (Regular Bail)',
