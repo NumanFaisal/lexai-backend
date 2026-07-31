@@ -40,11 +40,11 @@ export const exportDocx = async (req: Request, res: Response) => {
 export const enableShare = async (req: Request, res: Response) => {
   const id = req.params.id as string;
   const draft = await draftsService.enableShareLinkDraft(req.auth!.userId, id);
-  
-  res.status(200).json({ 
-    success: true, 
+
+  res.status(200).json({
+    success: true,
     shareUrl: `${req.protocol}://${req.get('host')}/shared/${draft.sharedToken}`,
-    sharedToken: draft.sharedToken 
+    sharedToken: draft.sharedToken,
   });
 };
 
@@ -60,9 +60,27 @@ export const reviseDraft = async (req: Request, res: Response) => {
   if (!instruction) {
     return res.status(400).json({ success: false, message: 'Instruction is required' });
   }
-  
-  const draft = await draftsService.reviseDraft(req.auth!.userId, id, instruction);
-  res.status(200).json({ success: true, data: { draft } });
+
+  const result = await draftsService.reviseDraft(req.auth!.userId, id, instruction);
+
+  if (result.status === 'NEEDS_CLARIFICATION') {
+    return res.status(200).json({
+      success: true,
+      data: {
+        status: 'NEEDS_CLARIFICATION',
+        clarificationQuestion: result.clarificationQuestion,
+      },
+    });
+  }
+
+  return res.status(200).json({
+    success: true,
+    data: {
+      status: 'REVISED',
+      draft: result.draft,
+      summaryOfChanges: result.summaryOfChanges,
+    },
+  });
 };
 
 export const askDraft = async (req: Request, res: Response) => {
@@ -71,7 +89,7 @@ export const askDraft = async (req: Request, res: Response) => {
   if (!question) {
     return res.status(400).json({ success: false, message: 'Question is required' });
   }
-  
+
   const answer = await draftsService.askDraft(req.auth!.userId, id, question);
   res.status(200).json({ success: true, data: { answer } });
 };

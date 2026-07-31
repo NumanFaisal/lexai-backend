@@ -1,41 +1,54 @@
 // src/workers/legalPdfRenderer.ts
-import pdfmake from 'pdfmake';
-import { TDocumentDefinitions, TFontDictionary, Content, TableCell } from 'pdfmake/interfaces';
+import PDFDocument from 'pdfkit';
+import * as fs from 'fs';
 
 // ─────────────────────────────────────────────────────────────────────────────
 // PRO-LEVEL DESIGN METRICS (1 cm = 28.346 points)
 // ─────────────────────────────────────────────────────────────────────────────
 const CM = 28.346;
-const MARGIN_LEFT = 3.5 * CM; // Standard 1.37" left margin for legal/court binding
+const MARGIN_LEFT = 3.5 * CM;   // Standard 1.37" left margin for legal/court binding
 const MARGIN_RIGHT = 2.5 * CM;
 const MARGIN_TOP = 2.5 * CM;
 const MARGIN_BOTTOM = 2.5 * CM;
 
-// Global document category routing matrix
-const SECTOR_MAPPING = {
-    CLASS_A_COURT: new Set(["BAIL_APPLICATION", "WRITTEN_STATEMENT", "CONSUMER_COMPLAINT", "VAKALATNAMA", "PETITION", "SUIT", "APPEAL"]),
-    CLASS_C_NOTICES: new Set(["LEGAL_NOTICE", "AFFIDAVIT", "POWER_OF_ATTORNEY", "DEMAND_NOTICE"])
-};
-
-const fonts: TFontDictionary = {
-    Times: {
-        normal: 'Times-Roman',
-        bold: 'Times-Bold',
-        italics: 'Times-Italic',
-        bolditalics: 'Times-BoldItalic'
-    }
-};
-
-pdfmake.setFonts(fonts);
-pdfmake.setUrlAccessPolicy(() => false);
-pdfmake.setLocalAccessPolicy(() => true);
+const PAGE_WIDTH = 595.27; // A4
+const USABLE_WIDTH = PAGE_WIDTH - MARGIN_LEFT - MARGIN_RIGHT;
 
 // ─────────────────────────────────────────────────────────────────────────────
-// ADVANCED ADAPTIVE CLASSIFIERS (Lawyer Logic)
+// TYPOGRAPHY CONSTANTS
+// ─────────────────────────────────────────────────────────────────────────────
+const FONT_NORMAL = 'Times-Roman';
+const FONT_BOLD = 'Times-Bold';
+const FONT_ITALIC = 'Times-Italic';
+
+const STYLES = {
+    courtHeader:   { font: FONT_BOLD,   size: 13, align: 'center' as const, marginBottom: 6 },
+    caseNumber:    { font: FONT_NORMAL, size: 11, align: 'center' as const, marginBottom: 8 },
+    versus:        { font: FONT_BOLD,   size: 12, align: 'center' as const, marginBottom: 8, marginTop: 8 },
+    docTitle:      { font: FONT_BOLD,   size: 14, align: 'center' as const, marginBottom: 15, marginTop: 10 },
+    clauseHeading: { font: FONT_BOLD,   size: 11, align: 'left'   as const, marginBottom: 6,  marginTop: 14 },
+    body:          { font: FONT_NORMAL, size: 11, align: 'justify' as const, marginBottom: 8,  lineGap: 5.5 },
+    bodyBold:      { font: FONT_BOLD,   size: 11, align: 'justify' as const, marginBottom: 8,  lineGap: 5.5 },
+    indentBlock:   { font: FONT_NORMAL, size: 11, align: 'justify' as const, marginBottom: 8,  lineGap: 5.5, indent: 24 },
+    tableHeader:   { font: FONT_BOLD,   size: 10, align: 'center' as const },
+    disclaimer:    { font: FONT_ITALIC, size: 8.5, align: 'center' as const, marginTop: 30, color: '#666666' },
+    noticeAddress: { font: FONT_NORMAL, size: 11, align: 'left'   as const, marginBottom: 4 },
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTOR MAPPING
+// ─────────────────────────────────────────────────────────────────────────────
+const SECTOR_MAPPING = {
+    CLASS_A_COURT:    new Set(["BAIL_APPLICATION", "WRITTEN_STATEMENT", "CONSUMER_COMPLAINT", "VAKALATNAMA", "PETITION", "SUIT", "APPEAL"]),
+    CLASS_C_NOTICES:  new Set(["LEGAL_NOTICE", "AFFIDAVIT", "POWER_OF_ATTORNEY", "DEMAND_NOTICE"])
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// TEXT CLEANUP
 // ─────────────────────────────────────────────────────────────────────────────
 function cleanText(text: string): string {
     return text
-        .replace(/^#{1,6}\s+/gm, '') // Strip markdown artifacts
+        .replace(/^#{1,6}\s+/gm, '')
         .replace(/\*\*(.+?)\*\*/g, '$1')
         .replace(/\*(.+?)\*/g, '$1')
         .replace(/__(.+?)__/g, '$1')
@@ -43,95 +56,138 @@ function cleanText(text: string): string {
         .replace(/^---+$|^===+$/gm, '')
         .replace(/```[\s\S]*?```/g, '')
         .replace(/`/g, '')
-        .replace(/[^\x00-\x7F]+/g, '') // Remove un-renderable emojis
+        .replace(/[^\x00-\x7F]+/g, '')
         .replace(/\n{3,}/g, '\n\n')
         .trim();
 }
 
-// Bracing pattern classifiers for highly volatile AI text expressions
-const isCourtHeader = (l: string, i: number): boolean => i < 8 && (/IN THE COURT OF/i.test(l) || /BEFORE THE DISTRICT/i.test(l) || /HON'BLE COURT/i.test(l));
-const isCaseNumber = (l: string): boolean => /^(FILING|CASE|A\.B\.P\.|W\.P\.|CRL\.|C\.R\.P\.|ABP|WP|COMPLAINT|SUIT|NO\s*:)/i.test(l);
-const isVersus = (l: string): boolean => /^(VERSUS|VS\.|VS|V\.)/i.test(l);
-const isSubjectLine = (l: string): boolean => /^(SUB|SUBJECT|IN THE MATTER OF)\s*:-/i.test(l) || l.toUpperCase().startsWith("SUBJECT:");
-const isIndexStart = (l: string): boolean => /^(INDEX)$/i.test(l);
-const isNumberedPara = (l: string): boolean => /^(\d+)\.\s+/.test(l);
-const isDisclaimer = (l: string): boolean => l.toLowerCase().includes("ai-generated") || (l.toLowerCase().includes("lexai") && (l.toLowerCase().includes("draft") || l.toLowerCase().includes("generated")));
-
-// Flexible Contract Classifiers (Class B)
-const isDocTitle = (l: string, i: number): boolean => i < 5 && l.length > 5 && l === l.toUpperCase() && /(AGREEMENT|DEED|CONTRACT|NDA|LEASE|SETTLEMENT)/i.test(l);
-const isBetweenLabel = (l: string): boolean => /^(THIS AGREEMENT|THIS DEED|BY AND BETWEEN|BETWEEN\s*:)/i.test(l);
+// ─────────────────────────────────────────────────────────────────────────────
+// LINE CLASSIFIERS
+// ─────────────────────────────────────────────────────────────────────────────
+const isCourtHeader   = (l: string, i: number): boolean => i < 8 && (/IN THE COURT OF/i.test(l) || /BEFORE THE DISTRICT/i.test(l) || /HON'BLE COURT/i.test(l));
+const isCaseNumber    = (l: string): boolean => /^(FILING|CASE|A\.B\.P\.|W\.P\.|CRL\.|C\.R\.P\.|ABP|WP|COMPLAINT|SUIT|NO\s*:)/i.test(l);
+const isVersus        = (l: string): boolean => /^(VERSUS|VS\.|VS|V\.)/i.test(l);
+const isSubjectLine   = (l: string): boolean => /^(SUB|SUBJECT|IN THE MATTER OF)\s*:-/i.test(l) || l.toUpperCase().startsWith("SUBJECT:");
+const isIndexStart    = (l: string): boolean => /^(INDEX)$/i.test(l);
+const isNumberedPara  = (l: string): boolean => /^(\d+)\.\s+/.test(l);
+const isDisclaimer    = (l: string): boolean => l.toLowerCase().includes("ai-generated") || (l.toLowerCase().includes("lexai") && (l.toLowerCase().includes("draft") || l.toLowerCase().includes("generated")));
+const isDocTitle      = (l: string, i: number): boolean => i < 5 && l.length > 5 && l === l.toUpperCase() && /(AGREEMENT|DEED|CONTRACT|NDA|LEASE|SETTLEMENT)/i.test(l);
+const isBetweenLabel  = (l: string): boolean => /^(THIS AGREEMENT|THIS DEED|BY AND BETWEEN|BETWEEN\s*:)/i.test(l);
 const isRecitalHeader = (l: string): boolean => /^(RECITALS|WITNESSETH|BACKGROUND)/i.test(l);
-const isRecitalLine = (l: string): boolean => /^(WHEREAS|WHEREAS,)/i.test(l);
+const isRecitalLine   = (l: string): boolean => /^(WHEREAS|WHEREAS,)/i.test(l);
 const isClauseHeading = (l: string): boolean => /^([A-Z0-9\s._-]+)$/.test(l) && l.length < 60 && /(ARTICLE|CLAUSE|SECTION|\b[0-9]+\.\s+[A-Z])/i.test(l);
-const isSubClause = (l: string): boolean => /^(\s*|\t*)([0-9]+\.[0-9]+|\([a-z0-9]\)|[a-z]\.)\s+/i.test(l);
+const isSubClause     = (l: string): boolean => /^(\s*|\t*)([0-9]+\.[0-9]+|\([a-z0-9]\)|[a-z]\.)?\s+/i.test(l);
 const isWitnessHeader = (l: string): boolean => /^(WITNESSES|WITNESS|IN WITNESS WHEREOF)/i.test(l);
 
 // ─────────────────────────────────────────────────────────────────────────────
-// COMPONENT BUILDERS (Clean Layout Blocks)
+// PDF RENDERING HELPERS
 // ─────────────────────────────────────────────────────────────────────────────
-function buildIndexTable(lines: string[]): Content {
-    const rows: TableCell[][] = [[
-        { text: 'S.No.', style: 'tableHeader' },
-        { text: 'Particulars / Documents', style: 'tableHeader' },
-        { text: 'Page No.', style: 'tableHeader' }
-    ]];
+interface StyleDef {
+    font: string;
+    size: number;
+    align: 'left' | 'center' | 'right' | 'justify';
+    marginBottom?: number;
+    marginTop?: number;
+    lineGap?: number;
+    indent?: number;
+    color?: string;
+}
 
+function applyStyle(doc: PDFKit.PDFDocument, style: StyleDef): void {
+    doc.font(style.font).fontSize(style.size).fillColor(style.color ?? '#000000');
+    if (style.marginTop) doc.moveDown(style.marginTop / 12);
+}
+
+function addText(
+    doc: PDFKit.PDFDocument,
+    text: string,
+    style: StyleDef,
+    extraOpts: object = {}
+): void {
+    applyStyle(doc, style);
+    const opts: PDFKit.Mixins.TextOptions = {
+        align: style.align,
+        lineGap: style.lineGap ?? 3,
+        indent: style.indent ?? 0,
+        width: USABLE_WIDTH,
+        ...extraOpts,
+    };
+    doc.text(text, MARGIN_LEFT, undefined, opts);
+    if (style.marginBottom) doc.moveDown(style.marginBottom / 12);
+}
+
+function drawHRule(doc: PDFKit.PDFDocument, color = '#b0b0b0'): void {
+    const y = doc.y;
+    doc.save()
+        .moveTo(MARGIN_LEFT, y)
+        .lineTo(PAGE_WIDTH - MARGIN_RIGHT, y)
+        .lineWidth(0.5)
+        .strokeColor(color)
+        .stroke()
+        .restore();
+    doc.moveDown(0.3);
+}
+
+function drawIndexTable(doc: PDFKit.PDFDocument, lines: string[]): void {
+    const colWidths = [1.5 * CM, 11 * CM, 2.5 * CM];
+    const rowH = 18;
+    const startX = MARGIN_LEFT;
+
+    // Header row
+    const headers = ['S.No.', 'Particulars / Documents', 'Page No.'];
+    let y = doc.y;
+
+    // Draw header
+    doc.font(FONT_BOLD).fontSize(10).fillColor('#000000');
+    headers.forEach((h, ci) => {
+        const x = startX + colWidths.slice(0, ci).reduce((a, b) => a + b, 0);
+        doc.rect(x, y, colWidths[ci], rowH).strokeColor('#999999').lineWidth(0.5).stroke();
+        doc.text(h, x + 2, y + 4, { width: colWidths[ci] - 4, align: 'center' });
+    });
+    y += rowH;
+
+    // Data rows
+    doc.font(FONT_NORMAL).fontSize(10);
     for (const line of lines) {
         if (!line.trim()) continue;
         const parts = line.split(/\s{2,}/);
-        if (parts.length >= 2) {
-            rows.push([
-                { text: parts[0], alignment: 'center' },
-                { text: parts[1] },
-                { text: parts[2] || '—', alignment: 'center' }
-            ]);
-        } else {
-            rows.push([{ text: line, colSpan: 3 }, {}, {}]);
-        }
+        const cells = parts.length >= 2
+            ? [parts[0], parts[1], parts[2] ?? '—']
+            : [line, '', ''];
+        const aligns: ('center' | 'left' | 'center')[] = ['center', 'left', 'center'];
+
+        cells.forEach((cell, ci) => {
+            const x = startX + colWidths.slice(0, ci).reduce((a, b) => a + b, 0);
+            doc.rect(x, y, colWidths[ci], rowH).strokeColor('#999999').lineWidth(0.5).stroke();
+            doc.text(cell, x + 2, y + 4, { width: colWidths[ci] - 4, align: aligns[ci] });
+        });
+        y += rowH;
     }
-
-    return {
-        table: { headerRows: 1, widths: [1.5 * CM, 11 * CM, 2.5 * CM], body: rows },
-        layout: { hLineColor: () => '#999999', vLineColor: () => '#999999', hLineWidth: () => 0.5, vLineWidth: () => 0.5 },
-        margin: [0, 8, 0, 16]
-    };
+    doc.y = y + 16;
 }
 
-function buildExecutionBlock(signatures: string[]): Content {
-    const cells: TableCell[] = signatures.map(sig => ({
-        stack: [
-            { text: sig, style: 'bodyBold', margin: [0, 12, 0, 16] },
-            { text: 'Signature: ___________________________', style: 'body', margin: [0, 0, 0, 6] },
-            { text: 'Name:      ___________________________', style: 'body', margin: [0, 0, 0, 6] },
-            { text: 'Title:     ___________________________', style: 'body', margin: [0, 0, 0, 6] },
-            { text: 'Date:      ___________________________', style: 'body', margin: [0, 0, 0, 0] }
-        ]
-    }));
+function drawExecutionBlock(doc: PDFKit.PDFDocument, signatures: string[]): void {
+    const colW = signatures.length === 2 ? USABLE_WIDTH / 2 : USABLE_WIDTH;
+    const startY = doc.y + 15;
 
-    const usableWidth = 595.27 - MARGIN_LEFT - MARGIN_RIGHT;
-    return {
-        table: {
-            widths: cells.length === 2 ? [usableWidth * 0.5, usableWidth * 0.5] : [usableWidth],
-            body: [cells]
-        },
-        layout: 'noBorders',
-        margin: [0, 15, 0, 15]
-    };
+    signatures.forEach((sig, i) => {
+        const x = MARGIN_LEFT + i * colW;
+        let y = startY;
+        doc.font(FONT_BOLD).fontSize(11).fillColor('#000000');
+        doc.text(sig, x, y, { width: colW - 8, align: 'justify' }); y += 28;
+        doc.font(FONT_NORMAL).fontSize(11);
+        ['Signature: ___________________________', 'Name:      ___________________________', 'Title:     ___________________________', 'Date:      ___________________________']
+            .forEach(field => { doc.text(field, x, y, { width: colW - 8 }); y += 20; });
+    });
+    doc.moveDown(2);
 }
 
-function buildPleadingPartyRow(name: string, role: string): Content {
-    const totalWidth = 595.27 - MARGIN_LEFT - MARGIN_RIGHT;
-    return {
-        table: {
-            widths: [totalWidth * 0.70, totalWidth * 0.30],
-            body: [[
-                { text: name, style: 'bodyBold', alignment: 'left' },
-                { text: role, style: 'bodyBold', alignment: 'right' }
-            ]]
-        },
-        layout: 'noBorders',
-        margin: [0, 4, 0, 4]
-    };
+function drawPartyRow(doc: PDFKit.PDFDocument, name: string, role: string): void {
+    const y = doc.y;
+    doc.font(FONT_BOLD).fontSize(11).fillColor('#000000');
+    doc.text(name, MARGIN_LEFT, y, { width: USABLE_WIDTH * 0.70, align: 'left' });
+    doc.text(role, MARGIN_LEFT + USABLE_WIDTH * 0.70, y, { width: USABLE_WIDTH * 0.30, align: 'right' });
+    doc.moveDown(0.5);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -141,7 +197,6 @@ export class LegalDocumentRenderer {
     private docType: string;
     private outputPath: string;
     private layoutStrategy: 'COURT' | 'CONTRACT' | 'NOTICE';
-    private story: Content[] = [];
 
     constructor(docType: string, outputPath: string) {
         this.docType = docType.toUpperCase().trim().replace(/\s+/g, '_');
@@ -152,7 +207,7 @@ export class LegalDocumentRenderer {
         } else if (SECTOR_MAPPING.CLASS_C_NOTICES.has(this.docType)) {
             this.layoutStrategy = 'NOTICE';
         } else {
-            this.layoutStrategy = 'CONTRACT'; // Safe institutional contract benchmark baseline
+            this.layoutStrategy = 'CONTRACT';
         }
     }
 
@@ -160,97 +215,134 @@ export class LegalDocumentRenderer {
         const content = cleanText(rawContent);
         const lines = content.split('\n');
 
+        const doc = new PDFDocument({
+            size: 'A4',
+            margins: { top: MARGIN_TOP, bottom: MARGIN_BOTTOM, left: MARGIN_LEFT, right: MARGIN_RIGHT },
+            bufferPages: true,
+            autoFirstPage: true,
+        });
+
+        // Footer on every page
+        doc.on('pageAdded', () => {
+            // footer drawn after all pages via buffering — handled below
+        });
+
+        const stream = fs.createWriteStream(this.outputPath);
+        doc.pipe(stream);
+
         switch (this.layoutStrategy) {
-            case 'COURT': this.generateCourtLayout(lines); break;
-            case 'NOTICE': this.generateNoticeLayout(lines); break;
-            case 'CONTRACT': this.generateContractLayout(lines); break;
+            case 'COURT':    this.generateCourtLayout(doc, lines);    break;
+            case 'NOTICE':   this.generateNoticeLayout(doc, lines);   break;
+            case 'CONTRACT': this.generateContractLayout(doc, lines); break;
         }
 
-        const docDefinition: TDocumentDefinitions = {
-            content: this.story,
-            pageSize: 'A4',
-            pageMargins: [MARGIN_LEFT, MARGIN_TOP, MARGIN_RIGHT, MARGIN_BOTTOM],
-            defaultStyle: { font: 'Times' },
-            styles: {
-                courtHeader: { font: 'Times', fontSize: 13, bold: true, alignment: 'center', margin: [0, 0, 0, 6] },
-                caseNumber: { font: 'Times', fontSize: 11, alignment: 'center', margin: [0, 0, 0, 8] },
-                versus: { font: 'Times', fontSize: 12, bold: true, alignment: 'center', margin: [0, 8, 0, 8] },
-                docTitle: { font: 'Times', fontSize: 14, bold: true, alignment: 'center', margin: [0, 10, 0, 15], lineHeight: 1.2 },
-                clauseHeading: { font: 'Times', fontSize: 11, bold: true, alignment: 'left', margin: [0, 14, 0, 6] },
-                body: { font: 'Times', fontSize: 11, alignment: 'justify', lineHeight: 1.5, margin: [0, 0, 0, 8] },
-                bodyBold: { font: 'Times', fontSize: 11, bold: true, alignment: 'justify', lineHeight: 1.5, margin: [0, 0, 0, 8] },
-                indentBlock: { font: 'Times', fontSize: 11, alignment: 'justify', lineHeight: 1.5, margin: [24, 0, 0, 8] },
-                tableHeader: { font: 'Times', fontSize: 10, bold: true, alignment: 'center' },
-                disclaimer: { font: 'Times', fontSize: 8.5, italics: true, alignment: 'center', color: '#666666', margin: [0, 30, 0, 0] }
-            },
-            footer: (currentPage) => ({
-                stack: [
-                    { canvas: [{ type: 'line', x1: MARGIN_LEFT, y1: 0, x2: 595.27 - MARGIN_RIGHT, y2: 0, lineWidth: 0.5, strokeColor: '#b0b0b0' }] },
-                    { text: `Page ${currentPage}`, alignment: 'center', font: 'Times', fontSize: 9, margin: [0, 6, 0, 0], color: '#444444' }
-                ],
-                margin: [0, 0, 0, 20]
-            })
-        };
+        // Draw footer on all buffered pages
+        const totalPages = doc.bufferedPageRange().count;
+        for (let i = 0; i < totalPages; i++) {
+            doc.switchToPage(i);
+            const footerY = doc.page.height - MARGIN_BOTTOM + 8;
+            doc.save()
+                .moveTo(MARGIN_LEFT, footerY)
+                .lineTo(PAGE_WIDTH - MARGIN_RIGHT, footerY)
+                .lineWidth(0.5).strokeColor('#b0b0b0').stroke()
+                .restore();
+            doc.font(FONT_NORMAL).fontSize(9).fillColor('#444444');
+            doc.text(`Page ${i + 1}`, MARGIN_LEFT, footerY + 6, { width: USABLE_WIDTH, align: 'center' });
+        }
 
-        const doc = pdfmake.createPdf(docDefinition);
-        await doc.write(this.outputPath);
+        doc.end();
+
+        await new Promise<void>((resolve, reject) => {
+            stream.on('finish', resolve);
+            stream.on('error', reject);
+        });
+
         return this.outputPath;
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // COURT PRODUCTION MATRIX (CLASS A)
-    // ─────────────────────────────────────────────────────────────────────────────
-    private generateCourtLayout(lines: string[]) {
-        let idx = 0; let inIndex = false; let indexLines: string[] = [];
+    // ─────────────────────────────────────────────────────────────────────────
+    // COURT LAYOUT (CLASS A)
+    // ─────────────────────────────────────────────────────────────────────────
+    private generateCourtLayout(doc: PDFKit.PDFDocument, lines: string[]): void {
+        let idx = 0; let inIndex = false; const indexLines: string[] = [];
 
         while (idx < lines.length) {
             const line = lines[idx]; const stripped = line.trim();
             if (!stripped) { idx++; continue; }
 
-            if (isCourtHeader(stripped, idx)) { this.story.push({ text: stripped.toUpperCase(), style: 'courtHeader' }); idx++; continue; }
-            if (isCaseNumber(stripped)) { this.story.push({ text: stripped, style: 'caseNumber' }); idx++; continue; }
-            if (isVersus(stripped)) { this.story.push({ text: 'VERSUS', style: 'versus' }); idx++; continue; }
+            if (isCourtHeader(stripped, idx)) {
+                addText(doc, stripped.toUpperCase(), STYLES.courtHeader); idx++; continue;
+            }
+            if (isCaseNumber(stripped)) {
+                addText(doc, stripped, STYLES.caseNumber); idx++; continue;
+            }
+            if (isVersus(stripped)) {
+                addText(doc, 'VERSUS', STYLES.versus); idx++; continue;
+            }
             if (/[.…·_-]+\s*(Petitioner|Plaintiff|Complainant|Accused|Opp\.? Party|Respondent)/i.test(line)) {
                 const match = line.match(/(.+?)([\s.…·_-]+\b(Petitioner|Plaintiff|Complainant|Accused|Opp\.? Party|Respondent)\b)/i);
-                if (match) this.story.push(buildPleadingPartyRow(match[1].trim(), match[2].replace(/[.…·_-]/g, '').trim()));
-                else this.story.push({ text: stripped, style: 'bodyBold' });
+                if (match) drawPartyRow(doc, match[1].trim(), match[2].replace(/[.…·_-]/g, '').trim());
+                else addText(doc, stripped, STYLES.bodyBold);
                 idx++; continue;
             }
-            if (isIndexStart(stripped)) { inIndex = true; this.story.push({ text: 'INDEX', style: 'clauseHeading', alignment: 'center' }); idx++; continue; }
+            if (isIndexStart(stripped)) {
+                inIndex = true;
+                addText(doc, 'INDEX', { ...STYLES.clauseHeading, align: 'center' });
+                idx++; continue;
+            }
             if (inIndex) {
                 if (/IN THE COURT|BEFORE THE/i.test(stripped)) {
-                    if (indexLines.length) this.story.push(buildIndexTable(indexLines));
-                    inIndex = false; this.story.push({ text: '', pageBreak: 'after' });
-                    this.story.push({ text: stripped.toUpperCase(), style: 'courtHeader' });
+                    if (indexLines.length) drawIndexTable(doc, indexLines);
+                    inIndex = false;
+                    doc.addPage();
+                    addText(doc, stripped.toUpperCase(), STYLES.courtHeader);
                 } else { indexLines.push(stripped); }
                 idx++; continue;
             }
-            if (/^(MOST RESPECTFULLY SHEWETH|HUMBLE PETITION)/i.test(stripped)) { this.story.push({ text: stripped + ':', style: 'bodyBold', margin: [0, 10, 0, 10] }); idx++; continue; }
-            if (/^(:?\s*)AFFIDAVIT/i.test(stripped)) { this.story.push({ text: '', pageBreak: 'before' }, { text: 'AFFIDAVIT', style: 'courtHeader', margin: [0, 10, 0, 15] }); idx++; continue; }
-            if (isDisclaimer(stripped)) { this.story.push({ text: stripped, style: 'disclaimer' }); idx++; continue; }
+            if (/^(MOST RESPECTFULLY SHEWETH|HUMBLE PETITION)/i.test(stripped)) {
+                addText(doc, stripped + ':', STYLES.bodyBold, { indent: 0 }); idx++; continue;
+            }
+            if (/^(:?\s*)AFFIDAVIT/i.test(stripped)) {
+                doc.addPage();
+                addText(doc, 'AFFIDAVIT', STYLES.courtHeader); idx++; continue;
+            }
+            if (isDisclaimer(stripped)) {
+                addText(doc, stripped, STYLES.disclaimer); idx++; continue;
+            }
 
-            this.story.push({ text: stripped, style: isNumberedPara(stripped) ? 'body' : 'body', margin: stripped.startsWith('That') ? [30, 0, 0, 8] : [0, 0, 0, 8] });
+            addText(doc, stripped, { ...STYLES.body, indent: stripped.startsWith('That') ? 30 : 0 });
             idx++;
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // TRANSACTIONAL CONTRACT LAW ARCHITECTURE (CLASS B)
-    // ─────────────────────────────────────────────────────────────────────────────
-    private generateContractLayout(lines: string[]) {
-        let idx = 0; let inRecitals = false; let discoveredSignatures: string[] = [];
+    // ─────────────────────────────────────────────────────────────────────────
+    // CONTRACT LAYOUT (CLASS B)
+    // ─────────────────────────────────────────────────────────────────────────
+    private generateContractLayout(doc: PDFKit.PDFDocument, lines: string[]): void {
+        let idx = 0; let inRecitals = false; const discoveredSignatures: string[] = [];
 
         while (idx < lines.length) {
             const line = lines[idx]; const stripped = line.trim();
             if (!stripped) { idx++; continue; }
 
-            if (isDocTitle(stripped, idx)) { this.story.push({ text: stripped, style: 'docTitle' }); idx++; continue; }
-            if (isBetweenLabel(stripped) || stripped.startsWith("NOW THIS AGREEMENT")) { this.story.push({ text: stripped, style: 'body' }); idx++; continue; }
-            if (isRecitalHeader(stripped)) { inRecitals = true; this.story.push({ text: stripped.toUpperCase(), style: 'clauseHeading' }); idx++; continue; }
-            if (inRecitals && isRecitalLine(stripped)) { this.story.push({ text: stripped, style: 'indentBlock' }); idx++; continue; }
-            if (isClauseHeading(stripped)) { inRecitals = false; this.story.push({ text: stripped, style: 'clauseHeading' }); idx++; continue; }
-            
-            // Signature dynamic grouping sweep
+            if (isDocTitle(stripped, idx)) {
+                addText(doc, stripped, STYLES.docTitle); idx++; continue;
+            }
+            if (isBetweenLabel(stripped) || stripped.startsWith("NOW THIS AGREEMENT")) {
+                addText(doc, stripped, STYLES.body); idx++; continue;
+            }
+            if (isRecitalHeader(stripped)) {
+                inRecitals = true;
+                addText(doc, stripped.toUpperCase(), STYLES.clauseHeading); idx++; continue;
+            }
+            if (inRecitals && isRecitalLine(stripped)) {
+                addText(doc, stripped, STYLES.indentBlock); idx++; continue;
+            }
+            if (isClauseHeading(stripped)) {
+                inRecitals = false;
+                addText(doc, stripped, STYLES.clauseHeading); idx++; continue;
+            }
+
             if (/^For and on behalf of/i.test(stripped) || (isWitnessHeader(stripped) && idx > lines.length - 30)) {
                 if (/^For/i.test(stripped)) discoveredSignatures.push(stripped.replace(/^For and on behalf of\s*/i, ''));
                 idx++;
@@ -260,24 +352,23 @@ export class LegalDocumentRenderer {
                     if (isDisclaimer(trace)) break;
                     idx++;
                 }
-                if (discoveredSignatures.length) this.story.push(buildExecutionBlock(discoveredSignatures));
+                if (discoveredSignatures.length) drawExecutionBlock(doc, discoveredSignatures);
                 continue;
             }
 
-            if (isDisclaimer(stripped)) { this.story.push({ text: stripped, style: 'disclaimer' }); idx++; continue; }
-            
-            this.story.push({ 
-                text: stripped, 
-                style: isSubClause(line) ? 'indentBlock' : 'body'
-            });
+            if (isDisclaimer(stripped)) {
+                addText(doc, stripped, STYLES.disclaimer); idx++; continue;
+            }
+
+            addText(doc, stripped, isSubClause(line) ? STYLES.indentBlock : STYLES.body);
             idx++;
         }
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
-    // ADVOCATE NOTICE CORRESPONDENCE MATRIX (CLASS C)
-    // ─────────────────────────────────────────────────────────────────────────────
-    private generateNoticeLayout(lines: string[]) {
+    // ─────────────────────────────────────────────────────────────────────────
+    // NOTICE LAYOUT (CLASS C)
+    // ─────────────────────────────────────────────────────────────────────────
+    private generateNoticeLayout(doc: PDFKit.PDFDocument, lines: string[]): void {
         let idx = 0; let contextAvis = false;
 
         while (idx < lines.length) {
@@ -285,25 +376,24 @@ export class LegalDocumentRenderer {
             if (!stripped) { idx++; continue; }
 
             if (!contextAvis && !stripped.startsWith("To")) {
-                this.story.push({ text: stripped, style: idx === 0 ? 'noticeSender' : 'noticeAddress' });
-                idx++; continue;
+                addText(doc, stripped, idx === 0 ? STYLES.bodyBold : STYLES.noticeAddress); idx++; continue;
             }
             if (/^(To|TO,)/.test(stripped)) {
                 contextAvis = true;
-                this.story.push({ text: 'To,', style: 'noticeAddress', margin: [0, 10, 0, 4] });
-                idx++; continue;
+                addText(doc, 'To,', STYLES.noticeAddress, { indent: 0 }); idx++; continue;
             }
             if (isSubjectLine(stripped) || stripped.toUpperCase().startsWith("SUBJECT")) {
-                this.story.push({ text: stripped, style: 'bodyBold', decoration: 'underline', margin: [0, 10, 0, 10] });
-                idx++; continue;
+                addText(doc, stripped, STYLES.bodyBold); idx++; continue;
             }
             if (/Sincerely|Faithfully|Regards/i.test(stripped)) {
-                this.story.push({ text: stripped, style: 'body', margin: [0, 20, 0, 25] });
-                idx++; continue;
+                doc.moveDown(1.5);
+                addText(doc, stripped, STYLES.body); idx++; continue;
             }
-            if (isDisclaimer(stripped)) { this.story.push({ text: stripped, style: 'disclaimer' }); idx++; continue; }
+            if (isDisclaimer(stripped)) {
+                addText(doc, stripped, STYLES.disclaimer); idx++; continue;
+            }
 
-            this.story.push({ text: stripped, style: 'body' });
+            addText(doc, stripped, STYLES.body);
             idx++;
         }
     }

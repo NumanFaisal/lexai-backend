@@ -17,6 +17,12 @@ router.get('/shared/:token', asyncHandler(controller.viewSharedDocument));
 // ─────────────────────────────────────────────────────────────────────────────
 router.use(requireAuth);
 
+// ⚠️  IMPORTANT: Static routes MUST be declared before parameterized /:id routes
+// to prevent Express matching 'save-from-chat' as a document ID.
+
+// Save from AI Chat  (must come before /:id)
+router.post('/save-from-chat', asyncHandler(controller.saveFromChat));
+
 // Core CRUD
 router.post('/', validate(createDocumentSchema), asyncHandler(controller.createDocument));
 router.get('/', asyncHandler(controller.listDocuments));
@@ -36,8 +42,5 @@ router.delete('/:id/share', asyncHandler(controller.disableShare));
 router.get('/:id/versions', asyncHandler(controller.getVersions));
 router.post('/:id/versions/restore', asyncHandler(controller.restoreVersion));
 router.post('/:id/review', validate(reviewDocumentSchema), asyncHandler(controller.reviewDocument));
-
-// Save from AI Chat
-router.post('/save-from-chat', asyncHandler(controller.saveFromChat));
 
 export default router;

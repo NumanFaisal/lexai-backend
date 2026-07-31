@@ -45,10 +45,15 @@ export const processCaseUpload = async (userId: string, file: Express.Multer.Fil
     `;
   }
 
-  return { caseId: caseFile.id, title, totalChunks: chunks.length };
+  return {
+    caseId: caseFile.id,
+    title,
+    extractedText: text,
+    fileUrl: r2Key,
+    totalChunks: chunks.length,
+  };
 };
 
-// 2. Process Unified Case Analysis
 export const processUnifiedCaseAnalysis = async (
   userId: string,
   query: string,
@@ -64,11 +69,62 @@ export const processUnifiedCaseAnalysis = async (
   }
 
   // Run the full LangGraph pipeline (handles Kanoon fallback, local precedents, and PDF facts)
-  return await runCaseAnalysisPipeline({
+  const pipelineResult = await runCaseAnalysisPipeline({
     query,
     userId,
     caseId,
     selectedModel: model,
-    // Note: If you want conversation history in the future, pass it here.
   });
+
+  const finalResponse = pipelineResult.finalResponse;
+
+  // Extract applicable laws from verified citations
+  const lawsSet = new Set<string>();
+  (pipelineResult.citationsVerified || []).forEach((c: any) => {
+    const act = c.actName || c.source || c.text;
+    if (act) {
+      lawsSet.add(c.sectionNum ? `${act} (Section ${c.sectionNum})` : act);
+    }
+  });
+
+  // Extract common Indian law sections from text if citations set is empty
+  if (lawsSet.size === 0) {
+    const sectionMatches = finalResponse.match(/(?:Section|Sec\.)\s+\d+[A-Z]?\s+(?:IPC|CrPC|BNS|BNSS|CPC|[A-Za-z]+)/gi);
+    if (sectionMatches) {
+      sectionMatches.forEach(m => lawsSet.add(m));
+    }
+  }
+
+  // Extract recommendations from analysis text
+  const recommendations: string[] = [];
+  const lines = finalResponse.split('\n');
+  let inRecSection = false;
+  for (const line of lines) {
+    if (/Next Steps|Recommendations|Action Plan|Tactical Strategy/i.test(line)) {
+      inRecSection = true;
+      continue;
+    }
+    if (inRecSection) {
+      if (line.startsWith('#')) break;
+      const cleanLine = line.replace(/^[•\-\*\d\.]+\s*/, '').replace(/^[›>]\s*/, '').trim();
+      if (cleanLine.length > 5) {
+        recommendations.push(cleanLine);
+      }
+    }
+  }
+
+  return {
+    analysis: finalResponse,
+    response: finalResponse,
+    applicableLaws: Array.from(lawsSet),
+    recommendations: recommendations.length > 0 ? recommendations : [
+      'Review the charge sheet/FIR carefully with legal counsel',
+      'Gather documentary evidence and transaction records',
+      'Prepare bail/defense application under applicable provisions'
+    ],
+    citations: pipelineResult.citationsVerified,
+    confidenceScore: pipelineResult.confidenceScore,
+    confidenceLevel: pipelineResult.confidenceLevel,
+    metadata: pipelineResult.metadata,
+  };
 };

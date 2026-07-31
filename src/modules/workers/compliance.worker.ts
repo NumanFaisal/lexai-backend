@@ -93,5 +93,6 @@ export const compliancePdfWorker = new Worker(
 );
 
 compliancePdfWorker.on('error', (err) => {
+  if (err.message.includes('ECONNREFUSED')) return;
   logger.error('compliancePdfWorker Error: ' + err.message);
 });

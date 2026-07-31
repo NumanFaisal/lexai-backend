@@ -40,5 +40,6 @@ export const voiceProcessingWorker = new Worker(
 );
 
 voiceProcessingWorker.on('error', (err) => {
+  if (err.message.includes('ECONNREFUSED')) return;
   logger.error('voiceProcessingWorker Error: ' + err.message);
 });

@@ -278,7 +278,7 @@ const templatesToSeed = [
 
 ## CAUSE TITLE
 - IN THE COURT OF {{presiding_judge_designation}}, {{court_name}}
-- BAIL APPLICATION NO. _______ OF {{application_year}}
+- BAIL APPLICATION NO. {{bail_application_number}} OF {{application_year}}
 - ARISING OUT OF CRIMINAL CASE NO. {{criminal_case_number}}
 - IN THE MATTER OF: {{applicant_name}} ...APPLICANT/ACCUSED
 - V/S {{respondent_state_name}} ...RESPONDENT
@@ -322,7 +322,7 @@ const templatesToSeed = [
 
 ## CAUSE TITLE
 - IN THE COURT OF {{court_name}}
-- ANTICIPATORY BAIL APPLICATION NO. _______ OF {{application_year}}
+- ANTICIPATORY BAIL APPLICATION NO. {{anticipatory_bail_application_number}} OF {{application_year}}
 - {{petitioner_name}}, residing at {{petitioner_address}} ...Petitioner
 - V/s {{respondent_state_name}} at the instance of the Inspector of Police In-charge of {{police_station}} ...Respondent
 - APPLICATION UNDER SECTION 482 OF THE BHARATIYA NAGARIK SURAKSHA SANHITA, 2023 (SEEKING ANTICIPATORY BAIL)
