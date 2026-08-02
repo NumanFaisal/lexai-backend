@@ -10,7 +10,9 @@ import {
   fetchConversationDetails,
   processDraftingEdit,
   processVoiceInput,
+  deleteConversation,
 } from './chat.service';
+
 import { GroqProvider } from '../../ai/providers/groq.provider';
 
 
@@ -152,4 +154,14 @@ export const handleGenerateTitle = async (req: Request, res: Response) => {
 
   const title = await GroqProvider.generateTitle(prompt);
   res.status(200).json({ success: true, data: { title } });
+};
+
+export const handleDeleteConversation = async (req: Request, res: Response) => {
+  const userId = req.auth?.userId;
+  if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+  const conversationId = req.params.id as string;
+  const result = await deleteConversation(conversationId, userId);
+
+  res.status(200).json({ success: true, data: result });
 };

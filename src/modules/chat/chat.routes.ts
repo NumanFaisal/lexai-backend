@@ -12,7 +12,9 @@ import {
   handleDraftingEdit,
   handleVoiceInput,
   handleGenerateTitle,
+  handleDeleteConversation,
 } from './chat.controller';
+
 import { requireAuth } from '../../shared/middleware/auth.middleware';
 import { asyncHandler } from '../../shared/utils/async.wrapper';
 import multer from 'multer';
@@ -121,6 +123,14 @@ router.get(
   requireAuth,
   apiRateLimiter,
   asyncHandler(getConversation)
+);
+
+// DELETE /api/v1/chat/conversations/:id
+router.delete(
+  '/conversations/:id',
+  requireAuth,
+  apiRateLimiter,
+  asyncHandler(handleDeleteConversation)
 );
 
 

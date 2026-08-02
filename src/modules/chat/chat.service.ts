@@ -6,7 +6,8 @@ import { complianceAgent } from '../../ai/agents/compliance/compliance.agent';
 import { draftingAgent } from '../../ai/agents/drafting/drafting.agent';
 import { BusinessProfile } from '../../ai/pipelines/compliance.pipeline';
 import { DraftingInput } from '../../ai/pipelines/drafting.pipeline';
-import { getUserHistory, saveResearchQuery, getConversationsList, countConversations, getConversationById } from './chat.repository';
+import { getUserHistory, saveResearchQuery, getConversationsList, countConversations, getConversationById, deleteConversationById } from './chat.repository';
+
 import { redisClient } from '@/config/redis';
 import { AppError } from '../../shared/errors/AppError';
 import prisma from '@/config/db';
@@ -582,4 +583,12 @@ export const processVoiceInput = async (userId: string,  audioBuffer: Buffer, fi
 
   return { text: transcribedText, fromCache: false };
 
+};
+
+export const deleteConversation = async (conversationId: string, userId: string) => {
+  const deleted = await deleteConversationById(conversationId, userId);
+  if (!deleted) {
+    throw new AppError('Conversation not found or access denied', 404);
+  }
+  return { deleted: true };
 };

@@ -104,3 +104,16 @@ export const getConversationById = async (id: string, userId: string) => {
     },
   });
 };
+
+export const deleteConversationById = async (id: string, userId: string) => {
+  // Verify ownership before deleting
+  const conversation = await prisma.conversation.findFirst({
+    where: { id, userId },
+  });
+  if (!conversation) return null;
+
+  // Delete related queries first (in case cascade isn't set)
+  await prisma.query.deleteMany({ where: { conversationId: id } });
+
+  return await prisma.conversation.delete({ where: { id } });
+};
