@@ -19,8 +19,13 @@ export class FileExtractor {
       }
     }
     
-    // 2. DOCX
-    if (mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document') {
+    // 2. DOCX & DOC
+    if (
+      mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+      mimetype === 'application/msword' ||
+      originalName.endsWith('.docx') ||
+      originalName.endsWith('.doc')
+    ) {
       const result = await mammoth.extractRawText({ buffer });
       return result.value;
     }

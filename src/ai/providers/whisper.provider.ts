@@ -8,19 +8,20 @@ export class WhisperProvider {
   static async transcribeHindiAudio(buffer: Buffer, originalFilename: string, mimetype: string): Promise<string> {
     try {
       const formData = new FormData();
-      const blob = new Blob([new Uint8Array(buffer)], { type: mimetype });
+      const cleanMimeType = (mimetype || 'audio/webm').split(';')[0];
+      const blob = new Blob([new Uint8Array(buffer)], { type: cleanMimeType });
 
       // Browsers often send blobs without extensions. We must enforce .webm or .wav.
       let safeFilename = originalFilename || 'audio.webm';
       if (!safeFilename.includes('.')) {
-        safeFilename += mimetype.includes('wav') ? '.wav' : '.webm';
+        safeFilename += cleanMimeType.includes('wav') ? '.wav' : '.webm';
       }
 
       formData.append('file', blob, safeFilename);
       formData.append('model', 'whisper-1');
       formData.append('language', 'hi'); // force hindi language model
       formData.append('response_format', 'text');
-      formData.append('temperature', '0.2'); // low teemp for more focused, accurate STT
+      formData.append('temperature', '0.2'); // low temp for more focused, accurate STT
 
 
       const response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
