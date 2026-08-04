@@ -11,6 +11,7 @@ import {
   processDraftingEdit,
   processVoiceInput,
   deleteConversation,
+  saveFullConversationThread,
 } from './chat.service';
 
 import { GroqProvider } from '../../ai/providers/groq.provider';
@@ -162,6 +163,16 @@ export const handleDeleteConversation = async (req: Request, res: Response) => {
 
   const conversationId = req.params.id as string;
   const result = await deleteConversation(conversationId, userId);
+
+  res.status(200).json({ success: true, data: result });
+};
+
+export const handleSaveFullConversation = async (req: Request, res: Response) => {
+  const userId = req.auth?.userId;
+  if (!userId) return res.status(401).json({ success: false, message: 'Unauthorized' });
+
+  const { conversationId, title, mode, messages } = req.body;
+  const result = await saveFullConversationThread(userId, { conversationId, title, mode, messages });
 
   res.status(200).json({ success: true, data: result });
 };

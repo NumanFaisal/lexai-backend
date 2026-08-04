@@ -21,6 +21,7 @@ export interface CaseAnalysisAgentInput {
   userId:              string;
   model?:              SupportedModel;
   conversationHistory?: BaseMessage[];
+  conversationId?:     string;
 }
 
 export interface CaseAnalysisAgentOutput {
@@ -42,7 +43,7 @@ export class CaseAnalysisAgent extends BaseAgent {
   async run(input: CaseAnalysisAgentInput): Promise<CaseAnalysisAgentOutput> {
     this.startTimer();
 
-    const { query, userId, model = 'gpt-4o', conversationHistory = [] } = input;
+    const { query, userId, model = 'gpt-4o', conversationHistory = [], conversationId } = input;
 
     // ── Step 1: Check Redis cache ──────────────────────────────────────────
     const cacheKey = this.buildCacheKey(userId, query);
@@ -74,6 +75,7 @@ export class CaseAnalysisAgent extends BaseAgent {
       latencyMs:         this.getLatency(),
       promptTokens:      result.metadata.inputTokens,
       responseTokens:    result.metadata.outputTokens,
+      conversationId,
     });
 
     // ── Step 4: Cache and return ───────────────────────────────────────────

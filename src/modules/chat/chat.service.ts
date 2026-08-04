@@ -18,6 +18,7 @@ import { WhisperProvider } from '../../ai/providers/whisper.provider';
 import { saveVoiceTranscription } from '../voice/voice.repository';
 import { QuerySource } from '@prisma/client';
 import { GroqProvider } from '../../ai/providers/groq.provider';
+import { BaseMessage, HumanMessage, AIMessage } from '@langchain/core/messages';
 
 // RESEARCH
 
@@ -43,34 +44,57 @@ export const ensureConversationWithTitle = async (
   prompt: string,
   conversationId?: string
 ): Promise<string> => {
-  if (conversationId && !conversationId.startsWith('temp_') && !conversationId.startsWith('conv_')) {
+  if (conversationId && !conversationId.startsWith('temp_')) {
     const existing = await prisma.conversation.findUnique({
       where: { id: conversationId },
     });
     if (existing) {
       if (!existing.title || existing.title.length > 45) {
-        const title = await GroqProvider.generateTitle(prompt);
-        await prisma.conversation.update({
-          where: { id: conversationId },
-          data: { title, updatedAt: new Date() },
+        GroqProvider.generateTitle(prompt).then((title) => {
+          prisma.conversation.update({
+            where: { id: conversationId },
+            data: { title, updatedAt: new Date() },
+          }).catch((err) => console.error('Failed async title update:', err));
         });
       }
       return conversationId;
     }
   }
 
-  const title = await GroqProvider.generateTitle(prompt);
+  const fallbackTitle =
+    prompt.trim().split('\n')[0].substring(0, 35) +
+    (prompt.length > 35 ? '...' : '');
+
   const newConv = await prisma.conversation.create({
     data: {
       userId,
-      title,
+      title: fallbackTitle,
       persona: 'ADVOCATE',
       mode,
       source: 'WEB',
     },
   });
 
+  // Generate high-quality AI title in background without blocking prompt execution
+  GroqProvider.generateTitle(prompt).then((aiTitle) => {
+    if (aiTitle && aiTitle !== fallbackTitle) {
+      prisma.conversation.update({
+        where: { id: newConv.id },
+        data: { title: aiTitle },
+      }).catch((err) => console.error('Failed async title update:', err));
+    }
+  }).catch(() => {});
+
   return newConv.id;
+};
+
+const normalizeCacheKey = (model: string, query: string) => {
+  const cleanQuery = query
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, '_');
+  return `cache:research:${model.toLowerCase()}:${cleanQuery}`;
 };
 
 export const processResearchQuery = async (
@@ -79,17 +103,72 @@ export const processResearchQuery = async (
   model: SupportedModel,
   conversationId?: string
 ) => {
-  console.log(`🧠 Starting AI Research for user ${userId} using ${model}...`);
-
   // Verify user exists before proceeding
   await ensureUserExists(userId);
 
+  const cacheKey = normalizeCacheKey(model, query);
+
+  // 1. Check Redis Cache first BEFORE calling LLM pipeline
+  try {
+    const cachedData = await redisClient.get(cacheKey);
+    if (cachedData) {
+      console.log(`⚡ [Redis Cache HIT] Returning cached response instantly for query: "${query}"`);
+      const parsed = JSON.parse(cachedData);
+
+      const targetConvId = await ensureConversationWithTitle(userId, 'RESEARCH', query, conversationId);
+
+      const savedRecord = await saveResearchQuery({
+        userId,
+        inputText:         query,
+        response:          parsed.response,
+        confidenceScore:   parsed.confidenceScore ?? 1.0,
+        citationsRaw:      [],
+        citationsVerified: parsed.citations ?? [],
+        conversationId:    targetConvId,
+      });
+
+      await redisClient.del(`history:${userId}`);
+
+      return {
+        queryId:         savedRecord.id,
+        conversationId:  targetConvId,
+        response:        parsed.response,
+        confidenceScore: parsed.confidenceScore ?? 1.0,
+        confidenceLevel: parsed.confidenceLevel ?? 'HIGH',
+        citations:       parsed.citations ?? [],
+        fromCache:       true,
+      };
+    }
+  } catch (err) {
+    console.warn('⚠️ Redis cache read error:', err);
+  }
+
+  // 2. Cache Miss → Call LLM pipeline with conversational history
+  console.log(`🧠 [Redis Cache MISS] Calling LLM pipeline for user ${userId} using ${model}...`);
+
   const targetConvId = await ensureConversationWithTitle(userId, 'RESEARCH', query, conversationId);
+
+  // Fetch previous messages in this conversation to provide multi-turn context memory
+  let conversationHistory: BaseMessage[] = [];
+  if (targetConvId) {
+    const pastQueries = await prisma.query.findMany({
+      where: { conversationId: targetConvId, userId },
+      orderBy: { createdAt: 'asc' },
+      take: 10,
+      select: { inputText: true, response: true },
+    });
+
+    conversationHistory = pastQueries.flatMap((q) => [
+      new HumanMessage(q.inputText),
+      new AIMessage(q.response),
+    ]);
+  }
 
   const result = await runResearchPipeline({
     query,
     userId,
     selectedModel: model,
+    conversationHistory,
   });
 
   const savedRecord = await saveResearchQuery({
@@ -102,10 +181,7 @@ export const processResearchQuery = async (
     conversationId:    targetConvId,
   });
 
-  // Cache invalidation — clear history cache so new query appears
-  await redisClient.del(`history:${userId}`);
-
-  return {
+  const responsePayload = {
     queryId:         savedRecord.id,
     conversationId:  targetConvId,
     response:        result.finalResponse,
@@ -113,6 +189,19 @@ export const processResearchQuery = async (
     confidenceLevel: result.confidenceLevel,
     citations:       result.citationsVerified,
   };
+
+  // 3. Save to Redis Cache (24 hour TTL)
+  try {
+    await redisClient.setex(cacheKey, 86400, JSON.stringify(responsePayload));
+    console.log(`💾 [Redis Cache SAVE] Cached AI response for key: ${cacheKey}`);
+  } catch (err) {
+    console.warn('⚠️ Redis cache write error:', err);
+  }
+
+  // Cache invalidation — clear history cache so new query appears
+  await redisClient.del(`history:${userId}`);
+
+  return responsePayload;
 };
 
 // CASE ANALYSIS
@@ -130,7 +219,22 @@ export const processCaseAnalysisQuery = async (
 
   const targetConvId = await ensureConversationWithTitle(userId, 'CASE_ANALYSIS', query, conversationId);
 
-  const result = await caseAnalysisAgent.run({ query, userId, model });
+  let conversationHistory: BaseMessage[] = [];
+  if (targetConvId) {
+    const pastQueries = await prisma.query.findMany({
+      where: { conversationId: targetConvId, userId },
+      orderBy: { createdAt: 'asc' },
+      take: 10,
+      select: { inputText: true, response: true },
+    });
+
+    conversationHistory = pastQueries.flatMap((q) => [
+      new HumanMessage(q.inputText),
+      new AIMessage(q.response),
+    ]);
+  }
+
+  const result = await caseAnalysisAgent.run({ query, userId, model, conversationHistory, conversationId: targetConvId });
 
   await redisClient.del(`history:${userId}`);
 
@@ -500,6 +604,13 @@ export const fetchConversationDetails = async (userId: string, conversationId: s
   });
 
   if (query) {
+    if (query.conversationId) {
+      const fullConv = await getConversationById(query.conversationId, userId);
+      if (fullConv) {
+        return fullConv;
+      }
+    }
+
     let reportId: string | undefined;
     let complianceItems: any[] | undefined;
 
@@ -591,4 +702,96 @@ export const deleteConversation = async (conversationId: string, userId: string)
     throw new AppError('Conversation not found or access denied', 404);
   }
   return { deleted: true };
+};
+
+export interface SaveFullConversationInput {
+  conversationId?: string;
+  title?: string;
+  mode?: 'RESEARCH' | 'CASE_ANALYSIS' | 'COMPLIANCE' | 'DRAFT';
+  messages: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    citations?: any[];
+  }>;
+}
+
+export const saveFullConversationThread = async (userId: string, data: SaveFullConversationInput) => {
+  await ensureUserExists(userId);
+
+  const mode = data.mode || 'RESEARCH';
+  let targetConvId = data.conversationId;
+
+  const firstUserMsg = data.messages?.find(m => m.role === 'user')?.content || 'New Conversation';
+  const title = data.title || firstUserMsg.split('\n')[0].substring(0, 45);
+
+  if (targetConvId && !targetConvId.startsWith('temp_')) {
+    const existing = await prisma.conversation.findUnique({
+      where: { id: targetConvId },
+    });
+    if (existing) {
+      await prisma.conversation.update({
+        where: { id: targetConvId },
+        data: { title, updatedAt: new Date() },
+      });
+    } else {
+      const newConv = await prisma.conversation.create({
+        data: {
+          id: targetConvId,
+          userId,
+          title,
+          persona: 'ADVOCATE',
+          mode,
+          source: 'WEB',
+        },
+      });
+      targetConvId = newConv.id;
+    }
+  } else {
+    const newConv = await prisma.conversation.create({
+      data: {
+        userId,
+        title,
+        persona: 'ADVOCATE',
+        mode,
+        source: 'WEB',
+      },
+    });
+    targetConvId = newConv.id;
+  }
+
+  // Sync user-assistant pairs to DB
+  if (Array.isArray(data.messages) && data.messages.length > 0) {
+    const queriesToCreate = [];
+    for (let i = 0; i < data.messages.length; i++) {
+      const userMsg = data.messages[i];
+      if (userMsg && userMsg.role === 'user') {
+        const assistantMsg = data.messages[i + 1]?.role === 'assistant' ? data.messages[i + 1] : null;
+        queriesToCreate.push({
+          userId,
+          mode,
+          inputText: userMsg.content,
+          response: assistantMsg?.content || '',
+          confidence: 1.0,
+          confidenceLevel: 'HIGH' as const,
+          citationsRaw: (assistantMsg?.citations || []) as any,
+          citationsVerified: (assistantMsg?.citations || []) as any,
+          hallucinationFlagged: false,
+          conversationId: targetConvId,
+        });
+      }
+    }
+
+    if (queriesToCreate.length > 0) {
+      await prisma.query.deleteMany({
+        where: { conversationId: targetConvId, userId },
+      });
+
+      await prisma.query.createMany({
+        data: queriesToCreate,
+      });
+    }
+  }
+
+  const fullConversation = await getConversationById(targetConvId, userId);
+  return fullConversation;
 };

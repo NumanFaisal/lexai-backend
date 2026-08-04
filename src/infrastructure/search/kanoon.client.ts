@@ -89,20 +89,24 @@ export const verifyWithKanoon = async (query: string): Promise<KanoonVerificatio
       }
     });
 
+    const fallbackUrl = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(query)}`;
+
     if (!response.ok) {
       console.error(`Kanoon API Error (${response.status}):`, response.statusText);
-      return { verified: false };
+      return { verified: false, kanoonUrl: fallbackUrl };
     }
 
     const data = await response.json();
 
     // 4. Verification Logic & URL Extraction
-    let result: KanoonVerificationResult = { verified: false };
+    let result: KanoonVerificationResult = {
+      verified: false,
+      kanoonUrl: fallbackUrl,
+    };
 
     if (data.docs && data.docs.length > 0) {
       result = {
         verified: true,
-        // Grab the ID of the top matching case to build the URL
         kanoonUrl: `https://indiankanoon.org/doc/${data.docs[0].tid}/`
       };
     }
@@ -114,8 +118,10 @@ export const verifyWithKanoon = async (query: string): Promise<KanoonVerificatio
 
   } catch (error) {
     console.error('Failed to verify citation with Kanoon API:', error);
-    // Fail safely without crashing the LangGraph pipeline
-    return { verified: false };
+    return {
+      verified: false,
+      kanoonUrl: `https://indiankanoon.org/search/?formInput=${encodeURIComponent(query)}`,
+    };
   }
 };
 

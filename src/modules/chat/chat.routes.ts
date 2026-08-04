@@ -13,6 +13,7 @@ import {
   handleVoiceInput,
   handleGenerateTitle,
   handleDeleteConversation,
+  handleSaveFullConversation,
 } from './chat.controller';
 
 import { requireAuth } from '../../shared/middleware/auth.middleware';
@@ -131,6 +132,15 @@ router.delete(
   requireAuth,
   apiRateLimiter,
   asyncHandler(handleDeleteConversation)
+);
+
+// POST /api/v1/chat/conversations/save (Store complete conversation thread)
+router.post(
+  '/conversations/save',
+  express.json(),
+  requireAuth,
+  apiRateLimiter,
+  asyncHandler(handleSaveFullConversation)
 );
 
 

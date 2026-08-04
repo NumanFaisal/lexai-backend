@@ -30,7 +30,7 @@ const PIPELINE_CONSTANTS = {
 
   // Timeouts (prevent hanging requests)
   LLM_TIMEOUT_MS: 30_000,           // 30s max for LLM response
-  KANOON_TIMEOUT_MS: 5_000,         // 5s max per Kanoon API call
+  KANOON_TIMEOUT_MS: 8_000,         // 8s max per Kanoon API call
 
   // Kanoon verification
   KANOON_MAX_CONCURRENT: 5,         // Verify max 5 citations at once (prevents rate limiting)
@@ -278,12 +278,12 @@ const validateInputNode = async (
     throw err;
   }
 
-  // Rule 2: Query must not be too short to be meaningful
-  if (query.length < 10) {
+  // Rule 2: Query must not be empty
+  if (!query || query.trim().length === 0) {
     return {
       error: {
         code: "QUERY_TOO_SHORT",
-        message: "Your question is too short. Please provide more details.",
+        message: "Please enter a valid question.",
         nodeWhere: "validateInput",
         retryable: false,
       },
@@ -355,13 +355,27 @@ const generateDraftNode = async (
       new HumanMessage(state.query),
     ];
 
-    // Call LLM with retry logic
-    const response = await withRetry(
-      () => llm.invoke(messages),
-      PIPELINE_CONSTANTS.MAX_RETRIES,
-      PIPELINE_CONSTANTS.RETRY_DELAY_MS,
-      "LLM.invoke"
-    );
+    // Call LLM with retry logic & automatic model fallback
+    let response;
+    try {
+      response = await withRetry(
+        () => llm.invoke(messages),
+        PIPELINE_CONSTANTS.MAX_RETRIES,
+        PIPELINE_CONSTANTS.RETRY_DELAY_MS,
+        "LLM.invoke"
+      );
+    } catch (llmErr: any) {
+      logger.warn({
+        msg: `⚠️ Primary model ${state.selectedModel} failed. Attempting fallback to gpt-4o...`,
+        error: llmErr?.message,
+      });
+      const fallbackLLM = getLLM("gpt-4o", {
+        temperature: 0.1,
+        maxTokens: 2000,
+        timeout: PIPELINE_CONSTANTS.LLM_TIMEOUT_MS,
+      });
+      response = await fallbackLLM.invoke(messages);
+    }
 
     const llmDurationMs = Date.now() - llmStartTime;
     const draftText = response.content.toString();
@@ -520,18 +534,18 @@ async function verifyInBatches(
             timeout(PIPELINE_CONSTANTS.KANOON_TIMEOUT_MS),
           ]);
 
-          // verifyWithKanoon returns {verified: boolean, kanoonUrl?: string}
+          const defaultKanoonUrl = `https://indiankanoon.org/search/?formInput=${encodeURIComponent(citation.rawText)}`;
+
           if (typeof verificationResult === "object" && verificationResult !== null) {
             return {
               ...citation,
               verified: (verificationResult as any).verified ?? false,
-              kanoonUrl: (verificationResult as any).kanoonUrl,
+              kanoonUrl: (verificationResult as any).kanoonUrl || defaultKanoonUrl,
             };
           }
 
-          return { ...citation, verified: false };
+          return { ...citation, verified: false, kanoonUrl: defaultKanoonUrl };
         } catch (error) {
-          // Kanoon API failed for this citation — mark as unverified but don't crash
           logger.warn({
             msg: "[research.pipeline] Kanoon verification failed for citation",
             citation: citation.rawText,
@@ -540,6 +554,7 @@ async function verifyInBatches(
           return {
             ...citation,
             verified: false,
+            kanoonUrl: `https://indiankanoon.org/search/?formInput=${encodeURIComponent(citation.rawText)}`,
             verificationError: (error as Error).message,
           };
         }
